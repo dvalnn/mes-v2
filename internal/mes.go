@@ -12,36 +12,6 @@ func assert(condition bool, message string) {
 	}
 }
 
-func timeKeeper(ctx context.Context, eventCh chan<- mesEvent) {
-	sleepTime, exists := ctx.Value(KEY_SIM_TIME).(time.Duration)
-	assert(exists, "simulation time not found in context")
-	assert(sleepTime > 0, "simulation time must be positive")
-
-	date := uint(1)
-	eventCh <- mesEvent{
-		eventType: EVENT_TIME,
-		payload:   date,
-	}
-
-	sleeper := time.NewTimer(sleepTime)
-	for {
-		select {
-		case <-ctx.Done():
-			sleeper.Stop()
-			log.Println("timeKeeper stopped")
-			return
-
-		case <-sleeper.C:
-			date++
-			eventCh <- mesEvent{
-				eventType: EVENT_TIME,
-				payload:   date,
-			}
-			sleeper.Reset(sleepTime)
-		}
-	}
-}
-
 type SupplyLine struct{}
 
 type ProcessingLine struct{}
@@ -62,6 +32,13 @@ func InitFactory() *Factory {
 	}
 }
 
+type mesEventType int
+
+type mesEvent struct {
+	payload   any
+	eventType mesEventType
+}
+
 // Run starts the MES operation.
 // It blocks until the context is canceled.
 // simTime (> 0) is the simulation time period.
@@ -75,10 +52,19 @@ func Run(ctx context.Context, simTime time.Duration) {
 
 	eventCh := make(chan mesEvent)
 
-	go timeKeeper(ctx, eventCh)
+	dateCh := dateCounter(ctx)
 
 	for {
-		event := <-eventCh
-		eventHandler(ctx, event)
+		select {
+		case <-ctx.Done():
+			return
+
+		case date := <-dateCh:
+			date.HandleNew(ctx)
+
+		case event := <-eventCh:
+			log.Panicf("unknown event type: %v", event.eventType)
+			cancel()
+		}
 	}
 }
