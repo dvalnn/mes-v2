@@ -58,11 +58,13 @@ func (t *Transformation) Complete(lineID string) *TransfCompletionForm {
 	}
 }
 
-type PieceRecipe struct {
-	Steps []Transformation `json:"steps"`
+type Piece struct {
+	Steps       []Transformation `json:"steps"`
+	CurrentStep int
+	ControlID   int16 // ControlID of the piece in Codesys
 }
 
-func GetProduction(ctx context.Context, quantity uint) ([]PieceRecipe, error) {
+func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
 	url := fmt.Sprintf("%s?max_n_items=%d", ENDPOINT_PRODUCTION, quantity)
 	resp, err := GetFromErp(ctx, url)
 	if err != nil {
@@ -73,15 +75,9 @@ func GetProduction(ctx context.Context, quantity uint) ([]PieceRecipe, error) {
 		return nil, fmt.Errorf("[GetProduction] unexpected status code: %d", resp.StatusCode)
 	}
 
-	var pieceRecipes []PieceRecipe
+	var pieceRecipes []Piece
 	if err := json.NewDecoder(resp.Body).Decode(&pieceRecipes); err != nil {
 		return nil, fmt.Errorf("[GetProduction] failed to unmarshal response: %w", err)
 	}
 	return pieceRecipes, nil
-}
-
-type Piece struct {
-	Steps       []Transformation
-	CurrentStep int
-	ControlID   int16 // ControlID of the piece in Codesys
 }

@@ -92,7 +92,7 @@ func TestGetProduction(t *testing.T) {
 	defer server.Close()
 
 	ctx := getHttpTestContext(server.URL, mes.DEFAULT_HTTP_TIMEOUT)
-	recipes, err := mes.GetProduction(ctx, 2)
+	recipes, err := mes.GetPieces(ctx, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestGetProduction(t *testing.T) {
 		t.Fatalf("expected 2 recipes, got %d", len(recipes))
 	}
 
-	expected := []mes.PieceRecipe{
+	expected := []mes.Piece{
 		{
 			Steps: []mes.Transformation{
 				{
