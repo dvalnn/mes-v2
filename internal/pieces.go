@@ -70,12 +70,12 @@ func GetProduction(ctx context.Context, quantity uint) ([]PieceRecipe, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("[GetProduction] unexpected status code: %d", resp.StatusCode)
 	}
 
 	var pieceRecipes []PieceRecipe
 	if err := json.NewDecoder(resp.Body).Decode(&pieceRecipes); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf("[GetProduction] failed to unmarshal response: %w", err)
 	}
 	return pieceRecipes, nil
 }

@@ -22,12 +22,12 @@ func GetDeliveries(ctx context.Context) ([]Delivery, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("[GetDeliveries] unexpected status code: %d", resp.StatusCode)
 	}
 
 	var deliveries []Delivery
 	if err := json.NewDecoder(resp.Body).Decode(&deliveries); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf("[GetDeliveries] failed to unmarshal response: %w", err)
 	}
 	return deliveries, nil
 }
@@ -52,18 +52,25 @@ func startDeliveryHandler(ctx context.Context) DeliveryHandler {
 			case deliveries := <-deliveryCh:
 				for _, delivery := range deliveries {
 					log.Printf(
-						"New delivery (id %d): %d pieces of type %v",
+						"[DeliveryHandler] New delivery (id %d): %d pieces of type %v",
 						delivery.Id,
 						delivery.Quantity,
 						delivery.Piece,
 					)
 
 					// TODO: 1 - Communicate new deliveries to the PLCs
-					log.Printf("Communicating delivery %d to PLCs", delivery.Id)
+					log.Printf(
+						"[DeliveryHandler] Communicating delivery %d to PLCs",
+						delivery.Id,
+					)
 					time.Sleep(time.Second)
 
 					// TODO: 2 - Wait for each delivery to be confirmed
-					log.Printf("Delivering %d %v pieces", delivery.Quantity, delivery.Piece)
+					log.Printf(
+						"[DeliveryHandler] Delivering %d %v pieces",
+						delivery.Quantity,
+						delivery.Piece,
+					)
 					time.Sleep(time.Second)
 
 					// TODO: 3 - Confirm the delivery to the ERP

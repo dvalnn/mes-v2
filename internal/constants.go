@@ -12,13 +12,10 @@ const (
 	KEY_ERP_URL      ctxKey = "erpUrl"
 
 	// Default Context values.
+
 	DEFAULT_SIM_TIME     = 1 * time.Minute
 	DEFAULT_HTTP_TIMEOUT = 500 * time.Millisecond
 	DEFAULT_ERP_URL      = "http://localhost:8080"
-
-	// Mes Event types.
-
-	EVENT_TIME mesEventType = iota
 
 	// Endpoints in the ERP system.
 

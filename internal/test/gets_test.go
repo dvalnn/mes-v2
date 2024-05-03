@@ -33,7 +33,7 @@ func TestGetShipmentArrivals(t *testing.T) {
 	defer server.Close()
 
 	ctx := getHttpTestContext(server.URL, mes.DEFAULT_HTTP_TIMEOUT)
-	shipments, err := mes.GetExpectedShipments(ctx, 1)
+	shipments, err := mes.GetShipments(ctx, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

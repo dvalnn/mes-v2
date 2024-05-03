@@ -58,10 +58,10 @@ func Run(ctx context.Context, simTime time.Duration) {
 			deliveryHandler.deliveryCh <- deliveries
 
 		case shipError := <-shipmentHandler.errCh:
-			log.Panicf("[Error] [ShipmentHandler] %v\n", shipError)
+			log.Panicf("[mes.Run] %v\n", shipError)
 
 		case deliveryError := <-deliveryHandler.errCh:
-			log.Panicf("[Error] [DeliveryHandler] %v\n", deliveryError)
+			log.Panicf("[mes.Run] %v\n", deliveryError)
 
 		}
 	}

@@ -58,10 +58,10 @@ func (d *DateForm) HandleNew(ctx context.Context) (
 ) {
 	// 1. Notify the ERP system about the new date.
 	if err := d.Post(ctx); err != nil {
-		log.Printf("[Error] [DateForm.HandleNew] posting date = %d failed: %v\n", d.Day, err)
+		log.Printf("[DateForm.HandleNew] posting date = %d failed: %v\n", d.Day, err)
 		return
 	}
-	log.Printf("[Info] [DateForm.HandleNew] date changed to: %d", d.Day)
+	log.Printf("[DateForm.HandleNew] date changed to: %d", d.Day)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -69,10 +69,9 @@ func (d *DateForm) HandleNew(ctx context.Context) (
 	// 2. Query for shipments that are arriving today.
 	go func() {
 		defer wg.Done()
-		ship, err := GetExpectedShipments(ctx, d.Day)
+		ship, err := GetShipments(ctx, d.Day)
 		if err != nil {
-			log.Printf("[Error] [DateForm.HandleNew] getting expected shipments failed: %v\n", err)
-			return
+			log.Printf("[DateForm.HandleNew] getting expected shipments failed: %v\n", err)
 		}
 		newShipments = ship
 	}()
@@ -82,14 +81,15 @@ func (d *DateForm) HandleNew(ctx context.Context) (
 		defer wg.Done()
 		del, err := GetDeliveries(ctx)
 		if err != nil {
-			log.Printf("[Error] [DateForm.HandleNew] getting deliveries failed: %v\n", err)
+			log.Printf("[DateForm.HandleNew] getting deliveries failed: %v\n", err)
 		}
 		newDeliveries = del
 	}()
 
-	log.Printf("[Info] [DateForm.HandleNew] expected shipments: %v\n", newShipments)
-	log.Printf("[Info] [DateForm.HandleNew] deliveries: %v\n", newDeliveries)
 	wg.Wait()
+
+	log.Printf("[DateForm.HandleNew] expected shipments: %v\n", newShipments)
+	log.Printf("[DateForm.HandleNew] deliveries: %v\n", newDeliveries)
 
 	return
 }
