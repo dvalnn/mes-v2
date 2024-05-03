@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 /*
@@ -60,8 +62,59 @@ func GetExpectedShipments(ctx context.Context, day uint) ([]Shipment, error) {
 	return shipments, nil
 }
 
-func (s *Shipment) Arrived() *ShipmentArrivalForm {
+func (s *Shipment) arrived() *ShipmentArrivalForm {
 	return &ShipmentArrivalForm{
 		ID: s.ID,
+	}
+}
+
+type ShipmentHandler struct {
+	// Send new shipments to this channel
+	newShip chan<- []Shipment
+	// Errors are reported on this channel
+	errCh <-chan error
+}
+
+func startShipmentHandler(ctx context.Context) ShipmentHandler {
+	shipCh := make(chan []Shipment)
+	errCh := make(chan error)
+
+	handler := func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case shipments := <-shipCh:
+				for _, shipment := range shipments {
+					log.Printf(
+						"New shipment: %d: %d piece of type %v.",
+						shipment.ID,
+						shipment.NPieces,
+						shipment.MaterialKind,
+					)
+
+					// 1 - Communicate new shipments to the PLCs
+					log.Printf("Communicating shipment %d to PLCs", shipment.ID)
+					time.Sleep(time.Second)
+
+					// 2 - Wait for each shipment arrival to be confirmed
+					log.Printf("Waiting for shipment %d to arrive", shipment.ID)
+					time.Sleep(time.Second)
+
+					// 3 - Communicate the arrival of each shipment to the ERP
+					log.Printf("Shipment %d arrived", shipment.ID)
+					if err := shipment.arrived().Post(ctx); err != nil {
+						errCh <- fmt.Errorf("error confirming shipment arrival: %v", err.Error())
+					}
+				}
+			}
+		}
+	}
+	go handler()
+
+	return ShipmentHandler{
+		newShip: shipCh,
+		errCh:   errCh,
 	}
 }

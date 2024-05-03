@@ -53,6 +53,7 @@ func Run(ctx context.Context, simTime time.Duration) {
 	eventCh := make(chan mesEvent)
 
 	dateCh := dateCounter(ctx)
+	shipmentHandler := startShipmentHandler(ctx)
 
 	for {
 		select {
@@ -61,6 +62,11 @@ func Run(ctx context.Context, simTime time.Duration) {
 
 		case date := <-dateCh:
 			date.HandleNew(ctx)
+			shipments, deliveries := date.HandleNew(ctx)
+			shipmentHandler.newShip <- shipments
+
+		case shipError := <-shipmentHandler.errCh:
+			log.Panicf("[Error] [ShipmentHandler] %v\n", shipError)
 
 		case event := <-eventCh:
 			log.Panicf("unknown event type: %v", event.eventType)
