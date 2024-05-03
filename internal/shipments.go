@@ -70,7 +70,7 @@ func (s *Shipment) arrived() *ShipmentArrivalForm {
 
 type ShipmentHandler struct {
 	// Send new shipments to this channel
-	newShip chan<- []Shipment
+	shipCh chan<- []Shipment
 	// Errors are reported on this channel
 	errCh <-chan error
 }
@@ -79,7 +79,7 @@ func startShipmentHandler(ctx context.Context) ShipmentHandler {
 	shipCh := make(chan []Shipment)
 	errCh := make(chan error)
 
-	handler := func() {
+	go func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -88,17 +88,17 @@ func startShipmentHandler(ctx context.Context) ShipmentHandler {
 			case shipments := <-shipCh:
 				for _, shipment := range shipments {
 					log.Printf(
-						"New shipment: %d: %d piece of type %v.",
+						"New shipment (id %d): %d pieces of type %v",
 						shipment.ID,
 						shipment.NPieces,
 						shipment.MaterialKind,
 					)
 
-					// 1 - Communicate new shipments to the PLCs
+					// TODO: 1 - Communicate new shipments to the PLCs
 					log.Printf("Communicating shipment %d to PLCs", shipment.ID)
 					time.Sleep(time.Second)
 
-					// 2 - Wait for each shipment arrival to be confirmed
+					// TODO: 2 - Wait for each shipment arrival to be confirmed
 					log.Printf("Waiting for shipment %d to arrive", shipment.ID)
 					time.Sleep(time.Second)
 
@@ -110,11 +110,10 @@ func startShipmentHandler(ctx context.Context) ShipmentHandler {
 				}
 			}
 		}
-	}
-	go handler()
+	}()
 
 	return ShipmentHandler{
-		newShip: shipCh,
-		errCh:   errCh,
+		shipCh: shipCh,
+		errCh:  errCh,
 	}
 }

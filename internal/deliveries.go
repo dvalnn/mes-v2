@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"time"
 )
 
 type Delivery struct {
@@ -28,4 +30,51 @@ func GetDeliveries(ctx context.Context) ([]Delivery, error) {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 	return deliveries, nil
+}
+
+type DeliveryHandler struct {
+	// Send new shipments to this channel
+	deliveryCh chan<- []Delivery
+	// Errors are reported on this channel
+	errCh <-chan error
+}
+
+func startDeliveryHandler(ctx context.Context) DeliveryHandler {
+	deliveryCh := make(chan []Delivery)
+	errCh := make(chan error)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case deliveries := <-deliveryCh:
+				for _, delivery := range deliveries {
+					log.Printf(
+						"New delivery (id %d): %d pieces of type %v",
+						delivery.Id,
+						delivery.Quantity,
+						delivery.Piece,
+					)
+
+					// TODO: 1 - Communicate new deliveries to the PLCs
+					log.Printf("Communicating delivery %d to PLCs", delivery.Id)
+					time.Sleep(time.Second)
+
+					// TODO: 2 - Wait for each delivery to be confirmed
+					log.Printf("Delivering %d %v pieces", delivery.Quantity, delivery.Piece)
+					time.Sleep(time.Second)
+
+					// TODO: 3 - Confirm the delivery to the ERP
+					time.Sleep(time.Second)
+				}
+			}
+		}
+	}()
+
+	return DeliveryHandler{
+		deliveryCh: deliveryCh,
+		errCh:      errCh,
+	}
 }
