@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 )
 
 // TransfCompletionForm is a form used to post the completion of a transformation to the ERP.
@@ -61,9 +60,20 @@ func (t *Transformation) Complete(lineID string) *TransfCompletionForm {
 }
 
 type Piece struct {
-	Steps       []Transformation `json:"steps"`
-	CurrentStep int
-	ControlID   int16 // ControlID of the piece in Codesys
+	ErpIdentifier string
+	Kind          string
+	Steps         []Transformation `json:"steps"`
+	CurrentStep   int
+	ControlID     int16
+}
+
+func (p *Piece) transform(lineID string) *TransfCompletionForm {
+	p.Kind = p.Steps[p.CurrentStep].ProductKind
+	p.ErpIdentifier = p.Steps[p.CurrentStep].ProductID
+	completed := p.Steps[p.CurrentStep].Complete(lineID)
+	p.CurrentStep++
+
+	return completed
 }
 
 func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
@@ -84,14 +94,6 @@ func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
 	return pieceRecipes, nil
 }
 
-type factoryRecipe struct {
-	toolTop    string
-	toolBot    string
-	id         int16
-	processBot bool
-	processTop bool
-}
-
 type PieceHandler struct {
 	wakeUpCh chan<- struct{}
 	errCh    <-chan error
@@ -104,6 +106,9 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 	pieceTracker := func(ctx context.Context, piece Piece, priority int) {
 		var toolTopMachine string
 		var toolBottomMachine string
+		var handler *itemHandler
+
+		warehouse := ID_W1
 
 		log.Printf("[PieceHandler] Handling piece %v transform from %v to %v)\n",
 			piece.Steps[0].MaterialID,
@@ -111,8 +116,8 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 			piece.Steps[len(piece.Steps)-1].ProductKind,
 		)
 
+	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
-
 			// TODO: 1 - Select/Wait for a free compatible line
 			toolTopMachine = piece.Steps[piece.CurrentStep].Tool
 			toolBottomMachine = ""
@@ -120,11 +125,12 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 				toolBottomMachine = piece.Steps[piece.CurrentStep+1].Tool
 			}
 
-			line, canCurry, err := lineGetFreeCompatible(
+			selectedLine, canCurry, err := lineGetFreeCompatible(
 				ctx,
 				priority,
 				toolTopMachine,
 				toolBottomMachine,
+				warehouse,
 			)
 			if err != nil {
 				errCh <- fmt.Errorf("[PieceHandler] No possible line for: %w", err)
@@ -133,35 +139,56 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 			// TODO:  2 - Send the instructions to the line
 			// If the line allows, curry the next 2 steps together
 			// if the line doesn't allow, just send the next step
-			recipe := factoryRecipe{
-				id:         piece.ControlID,
+			recipe := factoryControlForm{
 				toolTop:    toolTopMachine,
 				toolBot:    toolBottomMachine,
-				processTop: true,
+				pieceKind:  piece.Steps[piece.CurrentStep].ProductKind,
+				id:         getNextControlID(),
 				processBot: canCurry,
+				processTop: true,
 			}
 
-			go func() {
-				lineHandler := sendToLine(ctx, line, recipe)
-				for {
-					select {
-					case err := <-lineHandler.errCh:
-						errCh <- fmt.Errorf("[PieceHandler] %w", err)
+			handler = sendToLine(selectedLine, recipe)
 
-					case <-ctx.Done():
-						errCh <- fmt.Errorf("[PieceHandler] Context cancelled")
-						return
+			for {
+				select {
+				case err := <-handler.errCh:
+					errCh <- fmt.Errorf("[PieceHandler] %w", err)
 
-					case <-lineHandler.progressCh:
-						err := piece.Steps[piece.CurrentStep].Complete(line).Post(ctx)
-						if err != nil {
-							errCh <- fmt.Errorf("[PieceHandler] Failed to post completion: %w", err)
-						}
-						piece.CurrentStep++
+				case <-ctx.Done():
+					errCh <- fmt.Errorf("[PieceHandler] Context cancelled")
+					return
+
+				case line := <-handler.lineEntryCh:
+					form := WarehouseExitForm{
+						ItemId: piece.ErpIdentifier,
+						LineId: line,
 					}
-				}
-			}()
+					if err := form.Post(ctx); err != nil {
+						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse exit: %w", err)
+					}
 
+				case line := <-handler.transformCh:
+					err := piece.transform(line).Post(ctx)
+					if err != nil {
+						errCh <- fmt.Errorf("[PieceHandler] Failed to post completion: %w", err)
+					}
+
+				case wID := <-handler.lineExitCh:
+					form := WarehouseEntryForm{
+						ItemId:      piece.ErpIdentifier,
+						WarehouseId: wID,
+					}
+
+					if err := form.Post(ctx); err != nil {
+						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse entry: %w", err)
+					}
+
+					warehouse = wID
+
+					continue StepLoop
+				}
+			}
 		}
 	}
 
@@ -176,7 +203,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 
 			case <-wakeUpCh:
 				// TODO: rework piece set from erp to always be a new piece
-				// TODO: change the hardcoded 100 to a variable
+				// TODO: change the hardcoded 100 to a variable or constant
 				if newPieces, err := GetPieces(ctx, 100); err != nil {
 					errCh <- err
 				} else {
@@ -185,7 +212,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 					assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
 
 					for _, piece := range newPieces {
-						// TODO: handle piece priority
+						// TODO: handle piece priority properly
 						go pieceTracker(ctx, piece, 1)
 					}
 
@@ -198,40 +225,4 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 		wakeUpCh: wakeUpCh,
 		errCh:    errCh,
 	}
-}
-
-type lineHandler struct {
-	progressCh <-chan struct{}
-	errCh      <-chan error
-}
-
-func sendToLine(
-	ctx context.Context,
-	line string,
-	recipe factoryRecipe,
-) *lineHandler {
-	progressCh := make(chan struct{})
-	errCh := make(chan error)
-
-	// TODO: implement this function
-	time.Sleep(500 * time.Millisecond)
-
-	return &lineHandler{
-		progressCh: progressCh,
-		errCh:      errCh,
-	}
-}
-
-func lineGetFreeCompatible(
-	ctx context.Context,
-	priority int,
-	toolTopMachine, toolBottomMachine string) (
-	line string,
-	canCurry bool,
-	err error,
-) {
-	// TODO: implement this function
-	// This is a placeholder implementation
-	time.Sleep(250 * time.Millisecond)
-	return ID_L1, true, nil
 }

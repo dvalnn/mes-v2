@@ -12,26 +12,6 @@ func assert(condition bool, message string) {
 	}
 }
 
-type SupplyLine struct{}
-
-type ProcessingLine struct{}
-
-type DeliveryLine struct{}
-
-type Factory struct {
-	supplyLines   []SupplyLine
-	processLines  []ProcessingLine
-	deliveryLines []DeliveryLine
-}
-
-func InitFactory() *Factory {
-	return &Factory{
-		supplyLines:   []SupplyLine{},
-		processLines:  []ProcessingLine{},
-		deliveryLines: []DeliveryLine{},
-	}
-}
-
 // Run starts the MES operation.
 // It blocks until the context is canceled.
 // simTime (> 0) is the simulation time period.

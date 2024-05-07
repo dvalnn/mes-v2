@@ -43,14 +43,28 @@ const (
 	ID_L5 string = "L5" // Line 5 ID
 	ID_L6 string = "L6" // Line 6 ID
 
-	// ERP system product kinds.
+	// Factory system piece kinds.
 
-	P_KIND_1 string = "P1" // Product Kind 1
-	P_KIND_2 string = "P2" // Product Kind 2
-	P_KIND_3 string = "P3" // Product Kind 3
-	P_KIND_4 string = "P4" // Product Kind 4
-	P_KIND_5 string = "P5" // Product Kind 5
-	P_KIND_7 string = "P7" // Product Kind 7
-	P_KIND_8 string = "P8" // Product Kind 8
-	P_KIND_9 string = "P9" // Product Kind 9
+	P_KIND_1 string = "P1" // piece Kind 1
+	P_KIND_2 string = "P2" // piece Kind 2
+	P_KIND_3 string = "P3" // piece Kind 3
+	P_KIND_4 string = "P4" // piece Kind 4
+	P_KIND_5 string = "P5" // piece Kind 5
+	P_KIND_7 string = "P7" // piece Kind 7
+	P_KIND_8 string = "P8" // piece Kind 8
+	P_KIND_9 string = "P9" // piece Kind 9
+
+	// Factory tool Types
+
+	TOOL_1 string = "T1"
+	TOOL_2 string = "T2"
+	TOOL_3 string = "T3"
+	TOOL_4 string = "T4"
+	TOOL_5 string = "T5"
+	TOOL_6 string = "T6"
+
+	// Factory constants
+	LINE_CONVEYOR_SIZE  = 10
+	LINE_DEFAULT_M1_POS = 1
+	LINE_DEFAULT_M2_POS = 3
 )
