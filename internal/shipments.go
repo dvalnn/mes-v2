@@ -44,6 +44,7 @@ type Shipment struct {
 	NPieces      int    `json:"quantity"`
 }
 
+// TODO: Check if erp is returning shipments that already arrived and fix it
 func GetShipments(ctx context.Context, day uint) ([]Shipment, error) {
 	endpoint := fmt.Sprintf("%s?day=%d", ENDPOINT_EXPECTED_SHIPMENT, day)
 	resp, err := GetFromErp(ctx, endpoint)
@@ -75,11 +76,17 @@ type ShipmentHandler struct {
 	errCh <-chan error
 }
 
-func startShipmentHandler(ctx context.Context) ShipmentHandler {
+func startShipmentHandler(
+	ctx context.Context,
+	pieceWakeUp chan<- struct{},
+) *ShipmentHandler {
 	shipCh := make(chan []Shipment)
 	errCh := make(chan error)
 
 	go func() {
+		defer close(shipCh)
+		defer close(errCh)
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -121,12 +128,14 @@ func startShipmentHandler(ctx context.Context) ShipmentHandler {
 							err.Error(),
 						)
 					}
+
+					pieceWakeUp <- struct{}{}
 				}
 			}
 		}
 	}()
 
-	return ShipmentHandler{
+	return &ShipmentHandler{
 		shipCh: shipCh,
 		errCh:  errCh,
 	}

@@ -44,8 +44,9 @@ func Run(ctx context.Context, simTime time.Duration) {
 	ctx = context.WithValue(ctx, KEY_ERP_URL, DEFAULT_ERP_URL)
 
 	dateCh := dateCounter(ctx)
-	shipmentHandler := startShipmentHandler(ctx)
 	deliveryHandler := startDeliveryHandler(ctx)
+	pieceHandler := startPieceHandler(ctx)
+	shipmentHandler := startShipmentHandler(ctx, pieceHandler.wakeUpCh)
 
 	for {
 		select {
@@ -62,6 +63,9 @@ func Run(ctx context.Context, simTime time.Duration) {
 
 		case deliveryError := <-deliveryHandler.errCh:
 			log.Panicf("[mes.Run] %v\n", deliveryError)
+
+		case pieceError := <-pieceHandler.errCh:
+			log.Panicf("[mes.Run] %v\n", pieceError)
 
 		}
 	}

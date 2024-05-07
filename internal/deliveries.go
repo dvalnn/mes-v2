@@ -39,20 +39,28 @@ type DeliveryHandler struct {
 	errCh <-chan error
 }
 
-func startDeliveryHandler(ctx context.Context) DeliveryHandler {
+func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 	deliveryCh := make(chan []Delivery)
 	errCh := make(chan error)
 
 	go func() {
+		defer close(deliveryCh)
+		defer close(errCh)
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 
 			case deliveries := <-deliveryCh:
+
+				if len(deliveries) == 0 {
+					log.Println("[DeliveryHandler] No deliveries to process")
+				}
+
 				for _, delivery := range deliveries {
 					log.Printf(
-						"[DeliveryHandler] New delivery (id %d): %d pieces of type %v",
+						"[DeliveryHandler] New delivery (id %v): %d pieces of type %v",
 						delivery.Id,
 						delivery.Quantity,
 						delivery.Piece,
@@ -60,7 +68,7 @@ func startDeliveryHandler(ctx context.Context) DeliveryHandler {
 
 					// TODO: 1 - Communicate new deliveries to the PLCs
 					log.Printf(
-						"[DeliveryHandler] Communicating delivery %d to PLCs",
+						"[DeliveryHandler] Communicating delivery %v to PLCs",
 						delivery.Id,
 					)
 					time.Sleep(time.Second)
@@ -74,13 +82,17 @@ func startDeliveryHandler(ctx context.Context) DeliveryHandler {
 					time.Sleep(time.Second)
 
 					// TODO: 3 - Confirm the delivery to the ERP
+					log.Printf(
+						"[DeliveryHandler] Confirming delivery %v to ERP",
+						delivery.Id,
+					)
 					time.Sleep(time.Second)
 				}
 			}
 		}
 	}()
 
-	return DeliveryHandler{
+	return &DeliveryHandler{
 		deliveryCh: deliveryCh,
 		errCh:      errCh,
 	}

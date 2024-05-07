@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // TransfCompletionForm is a form used to post the completion of a transformation to the ERP.
@@ -80,4 +82,156 @@ func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
 		return nil, fmt.Errorf("[GetProduction] failed to unmarshal response: %w", err)
 	}
 	return pieceRecipes, nil
+}
+
+type factoryRecipe struct {
+	toolTop    string
+	toolBot    string
+	id         int16
+	processBot bool
+	processTop bool
+}
+
+type PieceHandler struct {
+	wakeUpCh chan<- struct{}
+	errCh    <-chan error
+}
+
+func startPieceHandler(ctx context.Context) *PieceHandler {
+	errCh := make(chan error)
+	wakeUpCh := make(chan struct{})
+
+	pieceTracker := func(ctx context.Context, piece Piece, priority int) {
+		var toolTopMachine string
+		var toolBottomMachine string
+
+		log.Printf("[PieceHandler] Handling piece %v transform from %v to %v)\n",
+			piece.Steps[0].MaterialID,
+			piece.Steps[0].MaterialKind,
+			piece.Steps[len(piece.Steps)-1].ProductKind,
+		)
+
+		for piece.CurrentStep < len(piece.Steps) {
+
+			// TODO: 1 - Select/Wait for a free compatible line
+			toolTopMachine = piece.Steps[piece.CurrentStep].Tool
+			toolBottomMachine = ""
+			if piece.CurrentStep+1 < len(piece.Steps) {
+				toolBottomMachine = piece.Steps[piece.CurrentStep+1].Tool
+			}
+
+			line, canCurry, err := lineGetFreeCompatible(
+				ctx,
+				priority,
+				toolTopMachine,
+				toolBottomMachine,
+			)
+			if err != nil {
+				errCh <- fmt.Errorf("[PieceHandler] No possible line for: %w", err)
+			}
+
+			// TODO:  2 - Send the instructions to the line
+			// If the line allows, curry the next 2 steps together
+			// if the line doesn't allow, just send the next step
+			recipe := factoryRecipe{
+				id:         piece.ControlID,
+				toolTop:    toolTopMachine,
+				toolBot:    toolBottomMachine,
+				processTop: true,
+				processBot: canCurry,
+			}
+
+			go func() {
+				lineHandler := sendToLine(ctx, line, recipe)
+				for {
+					select {
+					case err := <-lineHandler.errCh:
+						errCh <- fmt.Errorf("[PieceHandler] %w", err)
+
+					case <-ctx.Done():
+						errCh <- fmt.Errorf("[PieceHandler] Context cancelled")
+						return
+
+					case <-lineHandler.progressCh:
+						err := piece.Steps[piece.CurrentStep].Complete(line).Post(ctx)
+						if err != nil {
+							errCh <- fmt.Errorf("[PieceHandler] Failed to post completion: %w", err)
+						}
+						piece.CurrentStep++
+					}
+				}
+			}()
+
+		}
+	}
+
+	go func() {
+		defer close(errCh)
+		defer close(wakeUpCh)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case <-wakeUpCh:
+				// TODO: rework piece set from erp to always be a new piece
+				// TODO: change the hardcoded 100 to a variable
+				if newPieces, err := GetPieces(ctx, 100); err != nil {
+					errCh <- err
+				} else {
+					// Should never happen as this function is only
+					// waken up when there are new pieces to handle
+					assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
+
+					for _, piece := range newPieces {
+						// TODO: handle piece priority
+						go pieceTracker(ctx, piece, 1)
+					}
+
+				}
+			}
+		}
+	}()
+
+	return &PieceHandler{
+		wakeUpCh: wakeUpCh,
+		errCh:    errCh,
+	}
+}
+
+type lineHandler struct {
+	progressCh <-chan struct{}
+	errCh      <-chan error
+}
+
+func sendToLine(
+	ctx context.Context,
+	line string,
+	recipe factoryRecipe,
+) *lineHandler {
+	progressCh := make(chan struct{})
+	errCh := make(chan error)
+
+	// TODO: implement this function
+	time.Sleep(500 * time.Millisecond)
+
+	return &lineHandler{
+		progressCh: progressCh,
+		errCh:      errCh,
+	}
+}
+
+func lineGetFreeCompatible(
+	ctx context.Context,
+	priority int,
+	toolTopMachine, toolBottomMachine string) (
+	line string,
+	canCurry bool,
+	err error,
+) {
+	// TODO: implement this function
+	// This is a placeholder implementation
+	time.Sleep(250 * time.Millisecond)
+	return ID_L1, true, nil
 }
