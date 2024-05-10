@@ -64,7 +64,7 @@ const (
 	TOOL_6 string = "T6"
 
 	// Factory constants
-	LINE_CONVEYOR_SIZE  = 10
+	LINE_CONVEYOR_SIZE  = 5
 	LINE_DEFAULT_M1_POS = 1
 	LINE_DEFAULT_M2_POS = 3
 )

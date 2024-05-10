@@ -107,7 +107,7 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	controlForm := factory.processLines[lineID].createBestForm(piece)
 	// TODO: controlForm.SendToPLC()
 	assert(controlForm != nil, "[sendToProduction] controlForm is nil")
-	factory.processLines[lineID].addItem(&ConveyorItem{
+	factory.processLines[lineID].addItem(&conveyorItem{
 		controlID: controlForm.id,
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,

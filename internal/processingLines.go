@@ -14,8 +14,7 @@ type conveyorItemHandler struct {
 	transformCh chan<- string
 	lineEntryCh chan<- string
 	lineExitCh  chan<- string
-
-	errCh chan<- error
+	errCh       chan<- error
 }
 
 // To return to the caller
@@ -27,13 +26,15 @@ type itemHandler struct {
 	errCh <-chan error
 }
 
-type ConveyorItem struct {
+type conveyorItem struct {
 	handler   *conveyorItemHandler
 	controlID int16
+	useM1     bool
+	useM2     bool
 }
 
 type Conveyor struct {
-	item    *ConveyorItem
+	item    *conveyorItem
 	machine *Machine
 }
 
@@ -152,7 +153,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 	}
 }
 
-func (pl *ProcessingLine) addItem(item *ConveyorItem) {
+func (pl *ProcessingLine) addItem(item *conveyorItem) {
 	assert(pl.isReady(), "[ProcessingLine.addItem] Processing line is not ready")
 	assert(pl.conveyorLine[0].item == nil, "[ProcessingLine.addItem] Conveyor is not empty")
 
@@ -161,9 +162,12 @@ func (pl *ProcessingLine) addItem(item *ConveyorItem) {
 }
 
 func (pl *ProcessingLine) progressItems() int16 {
+	outID := int16(-1)
+
 	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
 	if outItem != nil {
 		outItem.handler.lineExitCh <- pl.id
+		outID = outItem.controlID
 	}
 
 	inItem := pl.conveyorLine[0].item
@@ -173,13 +177,13 @@ func (pl *ProcessingLine) progressItems() int16 {
 
 	m1 := pl.conveyorLine[LINE_DEFAULT_M1_POS].machine
 	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
-	if m1 != nil && m1Item != nil {
+	if m1 != nil && m1Item != nil && m1Item.useM1 {
 		m1Item.handler.transformCh <- pl.id
 	}
 
 	m2 := pl.conveyorLine[LINE_DEFAULT_M2_POS].machine
 	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
-	if m2 != nil && m2Item != nil {
+	if m2 != nil && m2Item != nil && m2Item.useM2 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
@@ -190,5 +194,5 @@ func (pl *ProcessingLine) progressItems() int16 {
 	pl.conveyorLine[0].item = nil
 	pl.readyForNext = true
 
-	return outItem.controlID
+	return outID
 }
