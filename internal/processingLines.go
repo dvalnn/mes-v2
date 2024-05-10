@@ -109,7 +109,7 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 
 func (pl *ProcessingLine) claimWaitingPiece() {
 	assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
-	log.Printf("[ProcessingLine.claimPiece] Running for line %s\n", pl.id)
+	// log.Printf("[ProcessingLine.claimPiece] Running for line %s\n", pl.id)
 	pl.pruneDeadWaiters()
 
 loop:
@@ -141,6 +141,12 @@ func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation)
 }
 
 func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
+	if pl.id == ID_L0 {
+		return &processControlForm{
+			pieceKind: piece.Kind,
+		}
+	}
+
 	currentStep := piece.Steps[piece.CurrentStep]
 	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, &currentStep)
 	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &currentStep)
@@ -161,7 +167,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 		return &processControlForm{
 			toolTop:    currentStep.Tool,
 			toolBot:    toolBot,
-			pieceKind:  currentStep.MaterialKind,
+			pieceKind:  piece.Kind,
 			processTop: true,
 			processBot: chainSteps,
 		}
@@ -170,7 +176,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 	return &processControlForm{
 		toolTop:    currentStep.Tool, // doesn't matter as it's not used
 		toolBot:    currentStep.Tool,
-		pieceKind:  currentStep.MaterialKind,
+		pieceKind:  piece.Kind,
 		processTop: false,
 		processBot: true,
 	}
@@ -185,7 +191,7 @@ func (pl *ProcessingLine) addItem(item *conveyorItem) {
 }
 
 func (pl *ProcessingLine) progressItems() int16 {
-	log.Printf("[ProcessingLine.progressItems] Processing line %s\n", pl.id)
+	// log.Printf("[ProcessingLine.progressItems] Processing line %s\n", pl.id)
 
 	inItem := pl.conveyorLine[0].item
 	if inItem != nil {

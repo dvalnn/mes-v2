@@ -204,8 +204,13 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 					}
 					log.Printf("[PieceHandler] Piece %v transformed at line %v\n", piece.ErpIdentifier, line)
 
-				case wID, open := <-handler.lineExitCh:
+				case line, open := <-handler.lineExitCh:
 					assert(open, "[PieceHandler] lineExitCh closed")
+
+					wID := ID_W2
+					if line == ID_L0 {
+						wID = ID_W1
+					}
 
 					if err := piece.enterWarehouse(wID).Post(ctx); err != nil {
 						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse entry: %w", err)

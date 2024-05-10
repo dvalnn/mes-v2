@@ -15,7 +15,8 @@ func TestCreateBestFormForOnlyM1(t *testing.T) {
 	}
 
 	minimalPieceForM1 := Piece{
-		Steps: []Transformation{{Tool: TOOL_1, MaterialKind: P_KIND_1}},
+		Kind:  P_KIND_1,
+		Steps: []Transformation{{Tool: TOOL_1}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM1)
@@ -41,7 +42,8 @@ func TestCreateBestFormForOnlyM2(t *testing.T) {
 	}
 
 	minimalPieceForM2 := Piece{
-		Steps: []Transformation{{Tool: TOOL_4, MaterialKind: P_KIND_1}},
+		Kind:  P_KIND_1,
+		Steps: []Transformation{{Tool: TOOL_4}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM2)
@@ -67,7 +69,8 @@ func TestCreateBestFormWithChain(t *testing.T) {
 	}
 
 	minimalPieceForChain := Piece{
-		Steps: []Transformation{{Tool: TOOL_1, MaterialKind: P_KIND_1}, {Tool: TOOL_4}},
+		Kind:  P_KIND_1,
+		Steps: []Transformation{{Tool: TOOL_1}, {Tool: TOOL_4}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForChain)
@@ -93,7 +96,8 @@ func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
 	}
 
 	minimalPieceForM2WithExtra := Piece{
-		Steps: []Transformation{{Tool: TOOL_4, MaterialKind: P_KIND_1}, {Tool: TOOL_1}},
+		Kind:  P_KIND_1,
+		Steps: []Transformation{{Tool: TOOL_4}, {Tool: TOOL_1}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM2WithExtra)
