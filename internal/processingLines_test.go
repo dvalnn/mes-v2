@@ -143,7 +143,7 @@ func TestLineAddItem(t *testing.T) {
 	pLine.addItem(conveyorItem) // should panic
 }
 
-func TestProgressItems(t *testing.T) {
+func TestProgressItemsSingleItem(t *testing.T) {
 	pLine := ProcessingLine{
 		id:            ID_L1,
 		conveyorLine:  initType1Conveyor(),
@@ -228,5 +228,95 @@ func TestProgressItems(t *testing.T) {
 	}
 	if !pLine.readyForNext {
 		t.Fatalf("Expected line to be ready for next item, but it was not")
+	}
+}
+
+func TestProgressItemsFullLine(t *testing.T) {
+	pLine := ProcessingLine{
+		id:            ID_L1,
+		conveyorLine:  initType1Conveyor(),
+		waitingPieces: []*freeLineWaiter{},
+		readyForNext:  true,
+	}
+
+	transformChM1 := make(chan string)
+	transformChM2 := make(chan string)
+	lineEntryCh := make(chan string)
+	lineExitCh := make(chan string)
+
+	conveyorItemEntry := &conveyorItem{
+		handler: &conveyorItemHandler{lineEntryCh: lineEntryCh},
+	}
+
+	conveyorItemExit := &conveyorItem{
+		handler:   &conveyorItemHandler{lineExitCh: lineExitCh},
+		controlID: 1,
+	}
+
+	conveyorItemM1 := &conveyorItem{
+		handler: &conveyorItemHandler{transformCh: transformChM1},
+		useM1:   true,
+	}
+
+	conveyorItemM2 := &conveyorItem{
+		handler: &conveyorItemHandler{transformCh: transformChM2},
+		useM2:   true,
+	}
+
+	pLine.conveyorLine[0].item = conveyorItemEntry
+	pLine.conveyorLine[1].item = conveyorItemM1
+	pLine.conveyorLine[2].item = nil
+	pLine.conveyorLine[3].item = conveyorItemM2
+	pLine.conveyorLine[4].item = conveyorItemExit
+
+	receiveOnChannel := func(ch <-chan string) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		select {
+		case lineID := <-ch:
+			cancel()
+			if lineID != ID_L1 {
+				t.Fatalf("Expected to receive line ID %s, got %s", ID_L1, lineID)
+			}
+
+		case <-ctx.Done():
+			t.Fatal("Expected to receive on channel, but did not")
+		}
+	}
+
+	go pLine.progressItems()
+	receiveOnChannel(lineEntryCh)
+	t.Log("Entry channel triggered as expected")
+	receiveOnChannel(transformChM1)
+	t.Log("M1 item channel triggered as expected")
+	receiveOnChannel(transformChM2)
+	t.Log("M2 item channel triggered as expected")
+	receiveOnChannel(lineExitCh)
+	t.Log("Exit channel triggered as expected")
+}
+
+func TestPruneDeadWaiters(t *testing.T) {
+	deadWaitCh1 := make(chan struct{})
+	deadWaitCh2 := make(chan struct{})
+	deadWaitCh3 := make(chan struct{})
+	close(deadWaitCh1)
+	close(deadWaitCh2)
+	close(deadWaitCh3)
+
+	aliveWaitCh1 := make(chan struct{})
+
+	pLine := ProcessingLine{
+		id:           ID_L1,
+		conveyorLine: initType1Conveyor(),
+		waitingPieces: []*freeLineWaiter{
+			{claimed: deadWaitCh1},
+			{claimed: deadWaitCh2},
+			{claimed: aliveWaitCh1},
+			{claimed: deadWaitCh3},
+		},
+	}
+
+	pLine.pruneDeadWaiters()
+	if len(pLine.waitingPieces) != 1 {
+		t.Fatalf("Expected 1 waiter to be alive, got %d", len(pLine.waitingPieces))
 	}
 }

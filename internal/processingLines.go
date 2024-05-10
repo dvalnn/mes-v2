@@ -1,5 +1,10 @@
 package mes
 
+import (
+	"log"
+	"sync"
+)
+
 type SupplyLine struct{}
 
 type DeliveryLine struct{}
@@ -74,6 +79,12 @@ func (pl *ProcessingLine) isReady() bool {
 	return pl.readyForNext
 }
 
+type freeLineWaiter struct {
+	claimed      <-chan struct{}
+	claimPieceCh chan<- string
+	claimLock    *sync.Mutex
+}
+
 func (pl *ProcessingLine) registerWaitingPiece(w *freeLineWaiter) {
 	pl.waitingPieces = append(pl.waitingPieces, w)
 }
@@ -82,27 +93,39 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 	aliveWaiters := make([]*freeLineWaiter, 0, len(pl.waitingPieces))
 	for _, w := range pl.waitingPieces {
 		select {
-		case _, ok := <-w.checkIfAliveCh:
-			if ok {
-				aliveWaiters = append(aliveWaiters, w)
-			}
+		case <-w.claimed:
 		default:
-			// Do nothing
+			aliveWaiters = append(aliveWaiters, w)
 		}
 	}
+
+	nPruned := len(pl.waitingPieces) - len(aliveWaiters)
+	if nPruned > 0 {
+		log.Printf("[Line.PruneDeadWaiters] Pruned %d dead waiters from line %s\n", nPruned, pl.id)
+	}
+
 	pl.waitingPieces = aliveWaiters
 }
 
-func (pl *ProcessingLine) claimPiece() {
+func (pl *ProcessingLine) claimWaitingPiece() {
 	assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
+	log.Printf("[ProcessingLine.claimPiece] Running for line %s\n", pl.id)
 	pl.pruneDeadWaiters()
+
+loop:
 	for _, w := range pl.waitingPieces {
-		_, ok := <-w.checkIfAliveCh
-		if !ok {
-			continue
+		w.claimLock.Lock()
+		select {
+		case <-w.claimed:
+			w.claimLock.Unlock()
+		default:
+			w.claimPieceCh <- pl.id
+			close(w.claimPieceCh)
+			// HACK:
+			// not unlocking here on purpose, so that the piece handler
+			// can unlock it after the claimed ch is properly closed
+			break loop
 		}
-		w.claimPieceCh <- pl.id
-		break
 	}
 }
 
@@ -162,13 +185,7 @@ func (pl *ProcessingLine) addItem(item *conveyorItem) {
 }
 
 func (pl *ProcessingLine) progressItems() int16 {
-	outID := int16(-1)
-
-	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
-	if outItem != nil {
-		outItem.handler.lineExitCh <- pl.id
-		outID = outItem.controlID
-	}
+	log.Printf("[ProcessingLine.progressItems] Processing line %s\n", pl.id)
 
 	inItem := pl.conveyorLine[0].item
 	if inItem != nil {
@@ -187,6 +204,12 @@ func (pl *ProcessingLine) progressItems() int16 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
+	var outID int16 = -1
+	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
+	if outItem != nil {
+		outItem.handler.lineExitCh <- pl.id
+		outID = outItem.controlID
+	}
 	// Move items along the conveyor line
 	for i := LINE_CONVEYOR_SIZE - 1; i > 0; i-- {
 		pl.conveyorLine[i].item = pl.conveyorLine[i-1].item

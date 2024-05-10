@@ -27,6 +27,7 @@ func Run(ctx context.Context, simTime time.Duration) {
 	deliveryHandler := startDeliveryHandler(ctx)
 	pieceHandler := startPieceHandler(ctx)
 	shipmentHandler := startShipmentHandler(ctx, pieceHandler.wakeUpCh)
+	factoryErrorCh := startFactoryHandler(ctx)
 
 	for {
 		select {
@@ -46,6 +47,9 @@ func Run(ctx context.Context, simTime time.Duration) {
 
 		case pieceError := <-pieceHandler.errCh:
 			log.Panicf("[mes.Run] %v\n", pieceError)
+
+		case factoryError := <-factoryErrorCh:
+			log.Panicf("[mes.Run] %v\n", factoryError)
 
 		}
 	}

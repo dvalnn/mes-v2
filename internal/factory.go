@@ -2,6 +2,7 @@ package mes
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 )
@@ -21,6 +22,7 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 	if factoryInstance == nil {
 		factoryOnce.Do(func() {
 			factoryInstance = InitFactory()
+			log.Printf("[getFactoryInstance] Factory instance created")
 		})
 	}
 
@@ -28,9 +30,10 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 }
 
 type factory struct {
-	processLines  map[string]*ProcessingLine
-	supplyLines   []SupplyLine
-	deliveryLines []DeliveryLine
+	processLines    map[string]*ProcessingLine
+	stateUpdateFunc func(*factory) error
+	supplyLines     []SupplyLine
+	deliveryLines   []DeliveryLine
 }
 
 func InitFactory() *factory {
@@ -52,10 +55,23 @@ func InitFactory() *factory {
 		}
 	}
 
+	// TODO: Implement the stateUpdateFunc using OPCUA to communicate with the PLCs
+	stateUpdateFunc := func(f *factory) error {
+		log.Println("[updateFactoryState] running update")
+		for _, line := range f.processLines {
+			if !line.isReady() {
+				line.progressItems()
+			}
+			line.claimWaitingPiece()
+		}
+		return nil
+	}
+
 	return &factory{
-		supplyLines:   []SupplyLine{},
-		processLines:  processLines,
-		deliveryLines: []DeliveryLine{},
+		processLines:    processLines,
+		supplyLines:     []SupplyLine{},
+		deliveryLines:   []DeliveryLine{},
+		stateUpdateFunc: stateUpdateFunc,
 	}
 }
 
@@ -88,12 +104,9 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 			nRegistered++
 		}
 	}
-	assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
-}
+	log.Printf("[registerWaitingPiece] Registered %d lines for piece %s", nRegistered, piece.ErpIdentifier)
 
-type freeLineWaiter struct {
-	checkIfAliveCh <-chan struct{}
-	claimPieceCh   chan<- string
+	assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
 }
 
 func sendToLine(lineID string, piece *Piece) *itemHandler {
@@ -117,6 +130,7 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 		},
 	})
 
+	log.Printf("[sendToLine] Sending piece to line %s", lineID)
 	return &itemHandler{
 		transformCh: transformCh,
 		lineEntryCh: lineEntryCh,
@@ -128,31 +142,34 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 func sendToProduction(
 	piece Piece,
 ) *itemHandler {
-	checkIfAliveCh := make(chan struct{})
+	claimed := make(chan struct{})
 	claimPieceCh := make(chan string)
-
+	lock := &sync.Mutex{}
 	waiter := &freeLineWaiter{
-		checkIfAliveCh: checkIfAliveCh,
-		claimPieceCh:   claimPieceCh,
+		claimed:      claimed,
+		claimPieceCh: claimPieceCh,
+		claimLock:    lock,
 	}
 
 	registerWaitingPiece(waiter, &piece)
 
-	// Blocking wait for a free line
-	checkIfAliveCh <- struct{}{}
-	close(checkIfAliveCh)
-
 	// Once a line is available, the check
-	line := <-claimPieceCh
+	line, open := <-claimPieceCh
+	close(claimed)
+	lock.Unlock()
+
+	assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
+	log.Printf("[sendToProduction] Piece %v claimed by line %s", piece.ErpIdentifier, line)
 
 	return sendToLine(line, &piece)
 }
 
 func updateFactoryState() {
-	_, mutex := getFactoryInstance()
+	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
-	// TODO: update the factory state based on the plc state variables
+	err := factory.stateUpdateFunc(factory)
+	assert(err == nil, "[updateFactoryState] Error updating factory state")
 }
 
 func progressFreeLines() {
@@ -169,7 +186,6 @@ func progressFreeLines() {
 
 func startFactoryHandler(ctx context.Context) <-chan error {
 	errCh := make(chan error)
-
 	// Connect to the factory floor plcs
 	time.Sleep(500 * time.Millisecond)
 
@@ -185,6 +201,7 @@ func startFactoryHandler(ctx context.Context) <-chan error {
 				time.Sleep(1000 * time.Millisecond)
 
 				// 2 - update the line status for any line that progressed
+				updateFactoryState()
 			}
 		}
 	}()

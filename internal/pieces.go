@@ -81,7 +81,8 @@ func (p *Piece) exitToProdLine(lineID string) *WarehouseExitForm {
 
 func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
 	condition := (p.Location == ID_L0 && warehouseID == ID_W1) || warehouseID == ID_W2
-	assert(condition, "Piece not in correct line before entering to warehouse")
+	msg := fmt.Sprintf("Piece %s not in correct line before entering to warehouse %s", p.ErpIdentifier, warehouseID)
+	assert(condition, msg)
 
 	p.Location = warehouseID
 	return &WarehouseEntryForm{
@@ -116,6 +117,14 @@ func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&pieceRecipes); err != nil {
 		return nil, fmt.Errorf("[GetProduction] failed to unmarshal response: %w", err)
 	}
+
+	for idx := 0; idx < len(pieceRecipes); idx++ {
+		initStep := pieceRecipes[idx].Steps[0]
+		pieceRecipes[idx].Kind = initStep.MaterialKind
+		pieceRecipes[idx].ErpIdentifier = initStep.MaterialID
+		pieceRecipes[idx].Location = ID_W1
+	}
+
 	return pieceRecipes, nil
 }
 
@@ -181,9 +190,10 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 				case line, open := <-handler.lineEntryCh:
 					assert(open, "[PieceHandler] lineEntryCh closed")
 
-					if err := piece.enterWarehouse(line).Post(ctx); err != nil {
+					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
 						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse exit: %w", err)
 					}
+					log.Printf("[PieceHandler] Piece %v left warehouse to line %v\n", piece.ErpIdentifier, line)
 
 				case line, open := <-handler.transformCh:
 					assert(open, "[PieceHandler] transformCh closed")
@@ -192,13 +202,15 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 					if err != nil {
 						errCh <- fmt.Errorf("[PieceHandler] Failed to post completion: %w", err)
 					}
+					log.Printf("[PieceHandler] Piece %v transformed at line %v\n", piece.ErpIdentifier, line)
 
 				case wID, open := <-handler.lineExitCh:
 					assert(open, "[PieceHandler] lineExitCh closed")
 
-					if err := piece.exitToProdLine(wID).Post(ctx); err != nil {
+					if err := piece.enterWarehouse(wID).Post(ctx); err != nil {
 						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse entry: %w", err)
 					}
+					log.Printf("[PieceHandler] Piece %v entered warehouse %v\n", piece.ErpIdentifier, wID)
 
 					continue StepLoop
 				}
