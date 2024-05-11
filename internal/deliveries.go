@@ -6,13 +6,21 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 type Delivery struct {
-	Id       string `json:"id"`
+	ID       string `json:"id"`
 	Piece    string `json:"piece"`
 	Quantity int    `json:"quantity"`
+}
+
+func (d *Delivery) PostConfirmation(ctx context.Context, id string) error {
+	formData := url.Values{
+		"id": {d.ID},
+	}
+	return PostToErp(ctx, ENDPOINT_DELIVERY, formData)
 }
 
 func GetDeliveries(ctx context.Context) ([]Delivery, error) {
@@ -61,7 +69,7 @@ func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 				for _, delivery := range deliveries {
 					log.Printf(
 						"[DeliveryHandler] New delivery (id %v): %d pieces of type %v",
-						delivery.Id,
+						delivery.ID,
 						delivery.Quantity,
 						delivery.Piece,
 					)
@@ -69,9 +77,9 @@ func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 					// TODO: 1 - Communicate new deliveries to the PLCs
 					log.Printf(
 						"[DeliveryHandler] Communicating delivery %v to PLCs",
-						delivery.Id,
+						delivery.ID,
 					)
-					time.Sleep(time.Second)
+					time.Sleep(500 * time.Millisecond)
 
 					// TODO: 2 - Wait for each delivery to be confirmed
 					log.Printf(
@@ -79,14 +87,11 @@ func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 						delivery.Quantity,
 						delivery.Piece,
 					)
-					time.Sleep(time.Second)
+					time.Sleep(500 * time.Millisecond)
 
 					// TODO: 3 - Confirm the delivery to the ERP
-					log.Printf(
-						"[DeliveryHandler] Confirming delivery %v to ERP",
-						delivery.Id,
-					)
-					time.Sleep(time.Second)
+					err := delivery.PostConfirmation(ctx, delivery.ID)
+					assert(err == nil, "[DeliveryHandler] Error confirming delivery")
 				}
 			}
 		}

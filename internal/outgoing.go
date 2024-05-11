@@ -8,17 +8,6 @@ import (
 	"time"
 )
 
-// ErpPoster is an interface that defines the methods required to post
-// data to the ERP system.
-// Data is sent in the x-www-form-urlencoded format.
-//
-// Context must be provided with values for
-// - KEY_ERP_URL (erp base url - string)
-// - KEY_HTTP_TIMEOUT (timeout for client request - time.Duration)
-type ErpPoster interface {
-	Post(ctx context.Context) error
-}
-
 // PostToErp sends a POST request to the ERP system at the given endpoint
 // with the provided form data. It returns an error if the request fails.
 // Form data is sent as x-www-form-urlencoded.
