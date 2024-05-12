@@ -1,10 +1,12 @@
-package mes
+package sim
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mes/internal/net/erp"
+	u "mes/internal/utils"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,11 +22,14 @@ func (d *Delivery) PostConfirmation(ctx context.Context, id string) error {
 	formData := url.Values{
 		"id": {d.ID},
 	}
-	return PostToErp(ctx, ENDPOINT_DELIVERY, formData)
+
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_DELIVERY)
+	return erp.Post(ctx, config, formData)
 }
 
 func GetDeliveries(ctx context.Context) ([]Delivery, error) {
-	resp, err := GetFromErp(ctx, ENDPOINT_DELIVERY)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_DELIVERY)
+	resp, err := erp.Get(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -42,12 +47,12 @@ func GetDeliveries(ctx context.Context) ([]Delivery, error) {
 
 type DeliveryHandler struct {
 	// Send new shipments to this channel
-	deliveryCh chan<- []Delivery
+	DeliveryCh chan<- []Delivery
 	// Errors are reported on this channel
-	errCh <-chan error
+	ErrCh <-chan error
 }
 
-func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
+func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 	deliveryCh := make(chan []Delivery)
 	errCh := make(chan error)
 
@@ -86,14 +91,14 @@ func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 
 					// TODO: 3 - Confirm the delivery to the ERP
 					err := delivery.PostConfirmation(ctx, delivery.ID)
-					assert(err == nil, "[DeliveryHandler] Error confirming delivery")
+					u.Assert(err == nil, "[DeliveryHandler] Error confirming delivery")
 				}
 			}
 		}
 	}()
 
 	return &DeliveryHandler{
-		deliveryCh: deliveryCh,
-		errCh:      errCh,
+		DeliveryCh: deliveryCh,
+		ErrCh:      errCh,
 	}
 }

@@ -1,10 +1,11 @@
-package mes
+package sim
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mes/internal/net/erp"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,7 +30,8 @@ func (s *ShipmentArrivalForm) Post(ctx context.Context) error {
 	data := url.Values{
 		"shipment_id": {strconv.Itoa(s.ID)},
 	}
-	return PostToErp(ctx, ENDPOINT_SHIPMENT_ARRIVAL, data)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_SHIPMENT_ARRIVAL)
+	return erp.Post(ctx, config, data)
 }
 
 /*
@@ -46,8 +48,9 @@ type Shipment struct {
 
 // TODO: Check if erp is returning shipments that already arrived and fix it
 func GetShipments(ctx context.Context, day uint) ([]Shipment, error) {
-	endpoint := fmt.Sprintf("%s?day=%d", ENDPOINT_EXPECTED_SHIPMENT, day)
-	resp, err := GetFromErp(ctx, endpoint)
+	endpoint := fmt.Sprintf("%s?day=%d", erp.ENDPOINT_EXPECTED_SHIPMENT, day)
+	config := erp.ConfigDefaultWithEndpoint(endpoint)
+	resp, err := erp.Get(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -71,12 +74,12 @@ func (s *Shipment) arrived() *ShipmentArrivalForm {
 
 type ShipmentHandler struct {
 	// Send new shipments to this channel
-	shipCh chan<- []Shipment
+	ShipCh chan<- []Shipment
 	// Errors are reported on this channel
-	errCh <-chan error
+	ErrCh <-chan error
 }
 
-func startShipmentHandler(
+func StartShipmentHandler(
 	ctx context.Context,
 	pieceWakeUp chan<- struct{},
 ) *ShipmentHandler {
@@ -131,7 +134,7 @@ func startShipmentHandler(
 	}()
 
 	return &ShipmentHandler{
-		shipCh: shipCh,
-		errCh:  errCh,
+		ShipCh: shipCh,
+		ErrCh:  errCh,
 	}
 }

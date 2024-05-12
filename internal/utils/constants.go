@@ -1,4 +1,4 @@
-package mes
+package utils
 
 import "time"
 
@@ -13,20 +13,7 @@ const (
 
 	// Default Context values.
 
-	DEFAULT_SIM_TIME     = 1 * time.Minute
-	DEFAULT_HTTP_TIMEOUT = 500 * time.Millisecond
-	DEFAULT_ERP_URL      = "http://localhost:8080"
-
-	// Endpoints in the ERP system.
-
-	ENDPOINT_BASE_URL          = "http://localhost:8080"
-	ENDPOINT_NEW_DATE          = "/date"
-	ENDPOINT_WAREHOUSE         = "/warehouse"
-	ENDPOINT_SHIPMENT_ARRIVAL  = "/materials/arrivals"
-	ENDPOINT_EXPECTED_SHIPMENT = "/materials/expected"
-	ENDPOINT_TRANSFORMATION    = "/transformations"
-	ENDPOINT_PRODUCTION        = "/production"
-	ENDPOINT_DELIVERY          = "/deliveries"
+	DEFAULT_SIM_TIME = 1 * time.Minute
 
 	// ERP system warehouse IDs.
 

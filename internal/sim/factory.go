@@ -1,8 +1,9 @@
-package mes
+package sim
 
 import (
 	"context"
 	"log"
+	u "mes/internal/utils"
 	"sync"
 	"time"
 )
@@ -39,14 +40,14 @@ type factory struct {
 func InitFactory() *factory {
 	processLines := make(map[string]*ProcessingLine)
 
-	processLines[ID_L0] = &ProcessingLine{
-		id:            ID_L0,
-		conveyorLine:  make([]Conveyor, LINE_CONVEYOR_SIZE),
+	processLines[u.ID_L0] = &ProcessingLine{
+		id:            u.ID_L0,
+		conveyorLine:  make([]Conveyor, u.LINE_CONVEYOR_SIZE),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
-	for _, lineId := range []string{ID_L1, ID_L2, ID_L3, ID_L4, ID_L5, ID_L6} {
+	for _, lineId := range []string{u.ID_L1, u.ID_L2, u.ID_L3, u.ID_L4, u.ID_L5, u.ID_L6} {
 		processLines[lineId] = &ProcessingLine{
 			id:            lineId,
 			conveyorLine:  initType1Conveyor(),
@@ -86,15 +87,15 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
-	if piece.Location == ID_W2 {
-		line := factory.processLines[ID_L0]
+	if piece.Location == u.ID_W2 {
+		line := factory.processLines[u.ID_L0]
 		line.registerWaitingPiece(waiter)
 		return
 	}
 
 	nRegistered := 0
 	for _, line := range factory.processLines {
-		if line.id == ID_L0 {
+		if line.id == u.ID_L0 {
 			continue
 		}
 
@@ -104,7 +105,7 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		}
 	}
 
-	assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
+	u.Assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
 }
 
 func sendToLine(lineID string, piece *Piece) *itemHandler {
@@ -119,7 +120,7 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 
 	// TODO: controlForm.SendToPLC()
 
-	assert(controlForm != nil, "[sendToProduction] controlForm is nil")
+	u.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,
@@ -159,7 +160,7 @@ func sendToProduction(
 	close(claimed)
 	lock.Unlock()
 
-	assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
+	u.Assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
 	log.Printf("[sendToProduction] Piece %v claimed by line %s", piece.ErpIdentifier, line)
 
 	return sendToLine(line, &piece)
@@ -170,7 +171,7 @@ func updateFactoryState() {
 	defer mutex.Unlock()
 
 	err := factory.stateUpdateFunc(factory)
-	assert(err == nil, "[updateFactoryState] Error updating factory state")
+	u.Assert(err == nil, "[updateFactoryState] Error updating factory state")
 }
 
 func progressFreeLines() {
@@ -185,7 +186,7 @@ func progressFreeLines() {
 	}
 }
 
-func startFactoryHandler(ctx context.Context) <-chan error {
+func StartFactoryHandler(ctx context.Context) <-chan error {
 	errCh := make(chan error)
 	// Connect to the factory floor plcs
 	time.Sleep(500 * time.Millisecond)

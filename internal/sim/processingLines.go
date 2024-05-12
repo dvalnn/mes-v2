@@ -1,6 +1,7 @@
-package mes
+package sim
 
 import (
+	u "mes/internal/utils"
 	"sync"
 )
 
@@ -43,16 +44,16 @@ type Conveyor struct {
 }
 
 func initType1Conveyor() []Conveyor {
-	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
+	conveyor := make([]Conveyor, u.LINE_CONVEYOR_SIZE)
 
-	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
+	conveyor[u.LINE_DEFAULT_M1_POS] = Conveyor{
 		item:    nil,
-		machine: &Machine{name: "M1", tools: []string{TOOL_1, TOOL_2, TOOL_3}},
+		machine: &Machine{name: "M1", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
 	}
 
-	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
+	conveyor[u.LINE_DEFAULT_M2_POS] = Conveyor{
 		item:    nil,
-		machine: &Machine{name: "M2", tools: []string{TOOL_4, TOOL_5, TOOL_6}},
+		machine: &Machine{name: "M2", tools: []string{u.TOOL_4, u.TOOL_5, u.TOOL_6}},
 	}
 
 	return conveyor
@@ -102,7 +103,7 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 }
 
 func (pl *ProcessingLine) claimWaitingPiece() {
-	assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
+	u.Assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
 	pl.pruneDeadWaiters()
 
 loop:
@@ -134,15 +135,15 @@ func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation)
 }
 
 func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
-	if pl.id == ID_L0 {
+	if pl.id == u.ID_L0 {
 		return &processControlForm{
 			pieceKind: piece.Kind,
 		}
 	}
 
 	currentStep := piece.Steps[piece.CurrentStep]
-	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, &currentStep)
-	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &currentStep)
+	topCompatible := pl.isMachineCompatibleWith(u.LINE_DEFAULT_M1_POS, &currentStep)
+	botCompatible := pl.isMachineCompatibleWith(u.LINE_DEFAULT_M2_POS, &currentStep)
 	if !topCompatible && !botCompatible {
 		return nil
 	}
@@ -154,7 +155,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 		if piece.CurrentStep+1 < len(piece.Steps) {
 			nextStep := piece.Steps[piece.CurrentStep+1]
 			toolBot = nextStep.Tool
-			chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
+			chainSteps = pl.isMachineCompatibleWith(u.LINE_DEFAULT_M2_POS, &nextStep)
 		}
 
 		return &processControlForm{
@@ -176,8 +177,8 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 }
 
 func (pl *ProcessingLine) addItem(item *conveyorItem) {
-	assert(pl.isReady(), "[ProcessingLine.addItem] Processing line is not ready")
-	assert(pl.conveyorLine[0].item == nil, "[ProcessingLine.addItem] Conveyor is not empty")
+	u.Assert(pl.isReady(), "[ProcessingLine.addItem] Processing line is not ready")
+	u.Assert(pl.conveyorLine[0].item == nil, "[ProcessingLine.addItem] Conveyor is not empty")
 
 	pl.readyForNext = false
 	pl.conveyorLine[0].item = item
@@ -189,26 +190,26 @@ func (pl *ProcessingLine) progressItems() int16 {
 		inItem.handler.lineEntryCh <- pl.id
 	}
 
-	m1 := pl.conveyorLine[LINE_DEFAULT_M1_POS].machine
-	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
+	m1 := pl.conveyorLine[u.LINE_DEFAULT_M1_POS].machine
+	m1Item := pl.conveyorLine[u.LINE_DEFAULT_M1_POS].item
 	if m1 != nil && m1Item != nil && m1Item.useM1 {
 		m1Item.handler.transformCh <- pl.id
 	}
 
-	m2 := pl.conveyorLine[LINE_DEFAULT_M2_POS].machine
-	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
+	m2 := pl.conveyorLine[u.LINE_DEFAULT_M2_POS].machine
+	m2Item := pl.conveyorLine[u.LINE_DEFAULT_M2_POS].item
 	if m2 != nil && m2Item != nil && m2Item.useM2 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
 	var outID int16 = -1
-	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
+	outItem := pl.conveyorLine[u.LINE_CONVEYOR_SIZE-1].item
 	if outItem != nil {
 		outItem.handler.lineExitCh <- pl.id
 		outID = outItem.controlID
 	}
 	// Move items along the conveyor line
-	for i := LINE_CONVEYOR_SIZE - 1; i > 0; i-- {
+	for i := u.LINE_CONVEYOR_SIZE - 1; i > 0; i-- {
 		pl.conveyorLine[i].item = pl.conveyorLine[i-1].item
 	}
 	pl.conveyorLine[0].item = nil

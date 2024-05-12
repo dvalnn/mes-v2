@@ -3,14 +3,9 @@ package mes
 import (
 	"context"
 	"log"
+	"mes/internal/sim"
 	"time"
 )
-
-func assert(condition bool, message string) {
-	if !condition {
-		log.Panicln("Assertion failed:", message)
-	}
-}
 
 // Run starts the MES operation.
 // It blocks until the context is canceled.
@@ -19,15 +14,11 @@ func Run(ctx context.Context, simTime time.Duration) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ctx = context.WithValue(ctx, KEY_SIM_TIME, simTime)
-	ctx = context.WithValue(ctx, KEY_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT)
-	ctx = context.WithValue(ctx, KEY_ERP_URL, DEFAULT_ERP_URL)
-
-	dateCh := dateCounter(ctx)
-	deliveryHandler := startDeliveryHandler(ctx)
-	pieceHandler := startPieceHandler(ctx)
-	shipmentHandler := startShipmentHandler(ctx, pieceHandler.wakeUpCh)
-	factoryErrorCh := startFactoryHandler(ctx)
+	dateCh := sim.DateCounter(ctx, simTime)
+	factoryErrorCh := sim.StartFactoryHandler(ctx)
+	deliveryHandler := sim.StartDeliveryHandler(ctx)
+	pieceHandler := sim.StartPieceHandler(ctx)
+	shipmentHandler := sim.StartShipmentHandler(ctx, pieceHandler.WakeUpCh)
 
 	for {
 		select {
@@ -36,16 +27,16 @@ func Run(ctx context.Context, simTime time.Duration) {
 
 		case date := <-dateCh:
 			shipments, deliveries := date.HandleNew(ctx)
-			shipmentHandler.shipCh <- shipments
-			deliveryHandler.deliveryCh <- deliveries
+			shipmentHandler.ShipCh <- shipments
+			deliveryHandler.DeliveryCh <- deliveries
 
-		case shipError := <-shipmentHandler.errCh:
+		case shipError := <-shipmentHandler.ErrCh:
 			log.Panicf("[mes.Run] %v\n", shipError)
 
-		case deliveryError := <-deliveryHandler.errCh:
+		case deliveryError := <-deliveryHandler.ErrCh:
 			log.Panicf("[mes.Run] %v\n", deliveryError)
 
-		case pieceError := <-pieceHandler.errCh:
+		case pieceError := <-pieceHandler.ErrCh:
 			log.Panicf("[mes.Run] %v\n", pieceError)
 
 		case factoryError := <-factoryErrorCh:

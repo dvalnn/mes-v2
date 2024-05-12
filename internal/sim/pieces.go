@@ -1,10 +1,12 @@
-package mes
+package sim
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mes/internal/net/erp"
+	u "mes/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -32,7 +34,8 @@ func (t *TransfCompletionForm) Post(ctx context.Context) error {
 		"time_taken":  {strconv.Itoa(t.TimeTaken)},
 	}
 
-	return PostToErp(ctx, ENDPOINT_TRANSFORMATION, data)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_TRANSFORMATION)
+	return erp.Post(ctx, config, data)
 }
 
 // Transformation represents a transformation operation in the ERP system.
@@ -69,8 +72,8 @@ type Piece struct {
 }
 
 func (p *Piece) exitToProdLine(lineID string) *WarehouseExitForm {
-	codition := (p.Location == ID_W2 && lineID == ID_L0) || p.Location == ID_W1
-	assert(codition, "Piece not in correct warehouse before exiting to line")
+	codition := (p.Location == u.ID_W2 && lineID == u.ID_L0) || p.Location == u.ID_W1
+	u.Assert(codition, "Piece not in correct warehouse before exiting to line")
 
 	p.Location = lineID
 	return &WarehouseExitForm{
@@ -80,9 +83,13 @@ func (p *Piece) exitToProdLine(lineID string) *WarehouseExitForm {
 }
 
 func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
-	condition := (p.Location == ID_L0 && warehouseID == ID_W1) || warehouseID == ID_W2
-	msg := fmt.Sprintf("Piece %s not in correct line before entering to warehouse %s", p.ErpIdentifier, warehouseID)
-	assert(condition, msg)
+	condition := (p.Location == u.ID_L0 && warehouseID == u.ID_W1) || warehouseID == u.ID_W2
+	msg := fmt.Sprintf(
+		"Piece %s not in correct line before entering to warehouse %s",
+		p.ErpIdentifier,
+		warehouseID,
+	)
+	u.Assert(condition, msg)
 
 	p.Location = warehouseID
 	return &WarehouseEntryForm{
@@ -92,7 +99,10 @@ func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
 }
 
 func (p *Piece) transform(lineID string) *TransfCompletionForm {
-	assert(p.CurrentStep+1 <= len(p.Steps), "Piece current step exceeds steps length")
+	u.Assert(
+		p.CurrentStep+1 <= len(p.Steps),
+		"Piece current step exceeds steps length",
+	)
 
 	p.Kind = p.Steps[p.CurrentStep].ProductKind
 	p.ErpIdentifier = p.Steps[p.CurrentStep].ProductID
@@ -103,51 +113,58 @@ func (p *Piece) transform(lineID string) *TransfCompletionForm {
 }
 
 func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
-	url := fmt.Sprintf("%s?max_n_items=%d", ENDPOINT_PRODUCTION, quantity)
-	resp, err := GetFromErp(ctx, url)
+	endpoint := fmt.Sprintf("%s?max_n_items=%d", erp.ENDPOINT_PRODUCTION, quantity)
+	config := erp.ConfigDefaultWithEndpoint(endpoint)
+	resp, err := erp.Get(ctx, config)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("[GetProduction] unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf(
+			"[GetProduction] unexpected status code: %d",
+			resp.StatusCode,
+		)
 	}
 
 	var pieceRecipes []Piece
 	if err := json.NewDecoder(resp.Body).Decode(&pieceRecipes); err != nil {
-		return nil, fmt.Errorf("[GetProduction] failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf(
+			"[GetProduction] failed to unmarshal response: %w",
+			err,
+		)
 	}
 
 	for idx := 0; idx < len(pieceRecipes); idx++ {
 		initStep := pieceRecipes[idx].Steps[0]
 		pieceRecipes[idx].Kind = initStep.MaterialKind
 		pieceRecipes[idx].ErpIdentifier = initStep.MaterialID
-		pieceRecipes[idx].Location = ID_W1
+		pieceRecipes[idx].Location = u.ID_W1
 	}
 
 	return pieceRecipes, nil
 }
 
 type PieceHandler struct {
-	wakeUpCh chan<- struct{}
-	errCh    <-chan error
+	WakeUpCh chan<- struct{}
+	ErrCh    <-chan error
 }
 
 func (p *Piece) validateCompletion() {
-	assert(
+	u.Assert(
 		p.CurrentStep == len(p.Steps),
 		"[PieceHandler] Not all steps completed for piece",
 	)
-	assert(
-		p.Location == ID_W2,
+	u.Assert(
+		p.Location == u.ID_W2,
 		"[PieceHandler] Piece location not W2 after completion",
 	)
 	lastStep := p.Steps[len(p.Steps)-1]
-	assert(
+	u.Assert(
 		p.ErpIdentifier == lastStep.ProductID,
 		"[PieceHandler] Piece ID not the same as the last step product ID",
 	)
-	assert(
+	u.Assert(
 		p.Kind == lastStep.ProductKind,
 		"[PieceHandler] Piece kind not the same as the last step product kind",
 	)
@@ -159,7 +176,7 @@ func (p *Piece) validateCompletion() {
 	)
 }
 
-func startPieceHandler(ctx context.Context) *PieceHandler {
+func StartPieceHandler(ctx context.Context) *PieceHandler {
 	errCh := make(chan error)
 	wakeUpCh := make(chan struct{})
 
@@ -179,7 +196,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 			for {
 				select {
 				case err, open := <-handler.errCh:
-					assert(open, "[PieceHandler] error channel closed")
+					u.Assert(open, "[PieceHandler] error channel closed")
 					errCh <- fmt.Errorf("[PieceHandler] %w", err)
 
 				case <-ctx.Done():
@@ -187,34 +204,55 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 					return
 
 				case line, open := <-handler.lineEntryCh:
-					assert(open, "[PieceHandler] lineEntryCh closed")
+					u.Assert(open, "[PieceHandler] lineEntryCh closed")
 
 					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
-						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse exit: %w", err)
+						errCh <- fmt.Errorf(
+							"[PieceHandler] Failed to post warehouse exit: %w",
+							err,
+						)
 					}
-					log.Printf("[PieceHandler] Piece %v left warehouse to line %v\n", piece.ErpIdentifier, line)
+					log.Printf(
+						"[PieceHandler] Piece %v left warehouse to line %v\n",
+						piece.ErpIdentifier,
+						line,
+					)
 
 				case line, open := <-handler.transformCh:
-					assert(open, "[PieceHandler] transformCh closed")
+					u.Assert(open, "[PieceHandler] transformCh closed")
 
 					err := piece.transform(line).Post(ctx)
 					if err != nil {
-						errCh <- fmt.Errorf("[PieceHandler] Failed to post completion: %w", err)
+						errCh <- fmt.Errorf(
+							"[PieceHandler] Failed to post completion: %w",
+							err,
+						)
 					}
-					log.Printf("[PieceHandler] Piece %v transformed at line %v\n", piece.ErpIdentifier, line)
+					log.Printf(
+						"[PieceHandler] Piece %v transformed at line %v\n",
+						piece.ErpIdentifier,
+						line,
+					)
 
 				case line, open := <-handler.lineExitCh:
-					assert(open, "[PieceHandler] lineExitCh closed")
+					u.Assert(open, "[PieceHandler] lineExitCh closed")
 
-					wID := ID_W2
-					if line == ID_L0 {
-						wID = ID_W1
+					wID := u.ID_W2
+					if line == u.ID_L0 {
+						wID = u.ID_W1
 					}
 
 					if err := piece.enterWarehouse(wID).Post(ctx); err != nil {
-						errCh <- fmt.Errorf("[PieceHandler] Failed to post warehouse entry: %w", err)
+						errCh <- fmt.Errorf(
+							"[PieceHandler] Failed to post warehouse entry: %w",
+							err,
+						)
 					}
-					log.Printf("[PieceHandler] Piece %v entered warehouse %v\n", piece.ErpIdentifier, wID)
+					log.Printf(
+						"[PieceHandler] Piece %v entered warehouse %v\n",
+						piece.ErpIdentifier,
+						wID,
+					)
 
 					continue StepLoop
 				}
@@ -234,7 +272,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 				return
 
 			case _, open := <-wakeUpCh:
-				assert(open, "[PieceHandler] wakeUpCh closed")
+				u.Assert(open, "[PieceHandler] wakeUpCh closed")
 
 				// TODO: rework piece set from erp to always be a new piece
 				// TODO: change the hardcoded 100 to a variable or constant
@@ -243,7 +281,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 				} else {
 					// Should never happen as this function is only
 					// waken up when there are new pieces to handle
-					assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
+					u.Assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
 
 					for _, piece := range newPieces {
 						// TODO: handle piece priority
@@ -256,7 +294,7 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 	}()
 
 	return &PieceHandler{
-		wakeUpCh: wakeUpCh,
-		errCh:    errCh,
+		WakeUpCh: wakeUpCh,
+		ErrCh:    errCh,
 	}
 }

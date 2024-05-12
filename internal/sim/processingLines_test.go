@@ -1,29 +1,30 @@
-package mes
+package sim
 
 import (
 	"context"
+	u "mes/internal/utils"
 	"testing"
 	"time"
 )
 
 func TestCreateBestFormForOnlyM1(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
 	minimalPieceForM1 := Piece{
-		Kind:  P_KIND_1,
-		Steps: []Transformation{{Tool: TOOL_1}},
+		Kind:  u.P_KIND_1,
+		Steps: []Transformation{{Tool: u.TOOL_1}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM1)
 	expected := &processControlForm{
-		toolTop:    TOOL_1,
-		toolBot:    TOOL_1,
-		pieceKind:  P_KIND_1,
+		toolTop:    u.TOOL_1,
+		toolBot:    u.TOOL_1,
+		pieceKind:  u.P_KIND_1,
 		processTop: true,
 		processBot: false,
 	}
@@ -35,22 +36,22 @@ func TestCreateBestFormForOnlyM1(t *testing.T) {
 
 func TestCreateBestFormForOnlyM2(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
 	minimalPieceForM2 := Piece{
-		Kind:  P_KIND_1,
-		Steps: []Transformation{{Tool: TOOL_4}},
+		Kind:  u.P_KIND_1,
+		Steps: []Transformation{{Tool: u.TOOL_4}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM2)
 	expected := &processControlForm{
-		toolTop:    TOOL_4,
-		toolBot:    TOOL_4,
-		pieceKind:  P_KIND_1,
+		toolTop:    u.TOOL_4,
+		toolBot:    u.TOOL_4,
+		pieceKind:  u.P_KIND_1,
 		processTop: false,
 		processBot: true,
 	}
@@ -62,22 +63,22 @@ func TestCreateBestFormForOnlyM2(t *testing.T) {
 
 func TestCreateBestFormWithChain(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
 	minimalPieceForChain := Piece{
-		Kind:  P_KIND_1,
-		Steps: []Transformation{{Tool: TOOL_1}, {Tool: TOOL_4}},
+		Kind:  u.P_KIND_1,
+		Steps: []Transformation{{Tool: u.TOOL_1}, {Tool: u.TOOL_4}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForChain)
 	expected := &processControlForm{
-		toolTop:    TOOL_1,
-		toolBot:    TOOL_4,
-		pieceKind:  P_KIND_1,
+		toolTop:    u.TOOL_1,
+		toolBot:    u.TOOL_4,
+		pieceKind:  u.P_KIND_1,
 		processTop: true,
 		processBot: true,
 	}
@@ -89,22 +90,22 @@ func TestCreateBestFormWithChain(t *testing.T) {
 
 func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
 	minimalPieceForM2WithExtra := Piece{
-		Kind:  P_KIND_1,
-		Steps: []Transformation{{Tool: TOOL_4}, {Tool: TOOL_1}},
+		Kind:  u.P_KIND_1,
+		Steps: []Transformation{{Tool: u.TOOL_4}, {Tool: u.TOOL_1}},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM2WithExtra)
 	expected := &processControlForm{
-		toolTop:    TOOL_4,
-		toolBot:    TOOL_4,
-		pieceKind:  P_KIND_1,
+		toolTop:    u.TOOL_4,
+		toolBot:    u.TOOL_4,
+		pieceKind:  u.P_KIND_1,
 		processTop: false,
 		processBot: true,
 	}
@@ -116,7 +117,7 @@ func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
 
 func TestLineAddItem(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
@@ -141,7 +142,7 @@ func TestLineAddItem(t *testing.T) {
 		if r := recover(); r == nil {
 			t.Fatalf("AddItem should panic when adding a piece to a line that is not ready for next")
 		}
-		t.Logf("AddItem assertion panicked as expected")
+		t.Logf("AddItem utils.Assertion panicked as expected")
 	}()
 
 	pLine.addItem(conveyorItem) // should panic
@@ -149,7 +150,7 @@ func TestLineAddItem(t *testing.T) {
 
 func TestProgressItemsSingleItem(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
@@ -176,8 +177,8 @@ func TestProgressItemsSingleItem(t *testing.T) {
 		select {
 		case lineID := <-ch:
 			cancel()
-			if lineID != ID_L1 {
-				t.Fatalf("Expected to receive line ID %s, got %s", ID_L1, lineID)
+			if lineID != u.ID_L1 {
+				t.Fatalf("Expected to receive line ID %s, got %s", u.ID_L1, lineID)
 			}
 
 		case <-ctx.Done():
@@ -237,7 +238,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 
 func TestProgressItemsFullLine(t *testing.T) {
 	pLine := ProcessingLine{
-		id:            ID_L1,
+		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
@@ -278,8 +279,8 @@ func TestProgressItemsFullLine(t *testing.T) {
 		select {
 		case lineID := <-ch:
 			cancel()
-			if lineID != ID_L1 {
-				t.Fatalf("Expected to receive line ID %s, got %s", ID_L1, lineID)
+			if lineID != u.ID_L1 {
+				t.Fatalf("Expected to receive line ID %s, got %s", u.ID_L1, lineID)
 			}
 
 		case <-ctx.Done():
@@ -309,7 +310,7 @@ func TestPruneDeadWaiters(t *testing.T) {
 	aliveWaitCh1 := make(chan struct{})
 
 	pLine := ProcessingLine{
-		id:           ID_L1,
+		id:           u.ID_L1,
 		conveyorLine: initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{
 			{claimed: deadWaitCh1},

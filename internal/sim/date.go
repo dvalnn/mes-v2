@@ -1,8 +1,9 @@
-package mes
+package sim
 
 import (
 	"context"
 	"log"
+	"mes/internal/net/erp"
 	"net/url"
 	"strconv"
 	"sync"
@@ -13,19 +14,16 @@ type DateForm struct {
 	Day uint
 }
 
-func (d *DateForm) Post(ctx context.Context) error {
+func (d *DateForm) post(ctx context.Context) error {
 	data := url.Values{
 		"day": {strconv.Itoa(int(d.Day))},
 	}
 
-	return PostToErp(ctx, ENDPOINT_NEW_DATE, data)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_NEW_DATE)
+	return erp.Post(ctx, config, data)
 }
 
-func dateCounter(ctx context.Context) <-chan DateForm {
-	sleepTime, exists := ctx.Value(KEY_SIM_TIME).(time.Duration)
-	assert(exists, "[DateCounter] simulation time not found in context")
-	assert(sleepTime > 0, "[DateCounter] simulation time must be positive")
-
+func DateCounter(ctx context.Context, sleepPeriod time.Duration) <-chan DateForm {
 	dateCh := make(chan DateForm)
 	go func() {
 		defer close(dateCh)
@@ -33,7 +31,7 @@ func dateCounter(ctx context.Context) <-chan DateForm {
 		date := DateForm{1}
 		dateCh <- date
 
-		sleeper := time.NewTimer(sleepTime)
+		sleeper := time.NewTimer(sleepPeriod)
 		for {
 			select {
 			case <-ctx.Done():
@@ -44,7 +42,7 @@ func dateCounter(ctx context.Context) <-chan DateForm {
 			case <-sleeper.C:
 				date.Day++
 				dateCh <- date
-				sleeper.Reset(sleepTime)
+				sleeper.Reset(sleepPeriod)
 			}
 		}
 	}()
@@ -57,7 +55,7 @@ func (d *DateForm) HandleNew(ctx context.Context) (
 	newDeliveries []Delivery,
 ) {
 	// 1. Notify the ERP system about the new date.
-	if err := d.Post(ctx); err != nil {
+	if err := d.post(ctx); err != nil {
 		log.Printf("[DateForm.HandleNew] posting date = %d failed: %v\n", d.Day, err)
 		return
 	}

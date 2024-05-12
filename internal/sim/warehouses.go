@@ -1,7 +1,8 @@
-package mes
+package sim
 
 import (
 	"context"
+	"mes/internal/net/erp"
 	"net/url"
 )
 
@@ -20,7 +21,8 @@ func (w *WarehouseExitForm) Post(ctx context.Context) error {
 		"exit":    {w.LineId},
 	}
 
-	return PostToErp(ctx, ENDPOINT_WAREHOUSE, data)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_WAREHOUSE)
+	return erp.Post(ctx, config, data)
 }
 
 // WarehouseEntryForm is a form used to post the entry of an item to a warehouse to the ERP.
@@ -37,5 +39,7 @@ func (w *WarehouseEntryForm) Post(ctx context.Context) error {
 		"item_id": {w.ItemId},
 		"entry":   {w.WarehouseId},
 	}
-	return PostToErp(ctx, ENDPOINT_WAREHOUSE, data)
+
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_WAREHOUSE)
+	return erp.Post(ctx, config, data)
 }
