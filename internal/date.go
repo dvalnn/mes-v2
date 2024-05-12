@@ -88,8 +88,7 @@ func (d *DateForm) HandleNew(ctx context.Context) (
 
 	wg.Wait()
 
-	log.Printf("[DateForm.HandleNew] expected shipments: %v\n", newShipments)
-	log.Printf("[DateForm.HandleNew] deliveries: %v\n", newDeliveries)
-
+	log.Printf("[DateForm.HandleNew] expected shipments for day %d: %v\n", d.Day, newShipments)
+	log.Printf("[DateForm.HandleNew] deliveries for day %d: %v\n", d.Day, newDeliveries)
 	return
 }

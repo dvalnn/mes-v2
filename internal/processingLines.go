@@ -1,7 +1,6 @@
 package mes
 
 import (
-	"log"
 	"sync"
 )
 
@@ -99,17 +98,11 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 		}
 	}
 
-	nPruned := len(pl.waitingPieces) - len(aliveWaiters)
-	if nPruned > 0 {
-		log.Printf("[Line.PruneDeadWaiters] Pruned %d dead waiters from line %s\n", nPruned, pl.id)
-	}
-
 	pl.waitingPieces = aliveWaiters
 }
 
 func (pl *ProcessingLine) claimWaitingPiece() {
 	assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
-	// log.Printf("[ProcessingLine.claimPiece] Running for line %s\n", pl.id)
 	pl.pruneDeadWaiters()
 
 loop:
@@ -191,8 +184,6 @@ func (pl *ProcessingLine) addItem(item *conveyorItem) {
 }
 
 func (pl *ProcessingLine) progressItems() int16 {
-	// log.Printf("[ProcessingLine.progressItems] Processing line %s\n", pl.id)
-
 	inItem := pl.conveyorLine[0].item
 	if inItem != nil {
 		inItem.handler.lineEntryCh <- pl.id

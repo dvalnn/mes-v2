@@ -174,7 +174,6 @@ func startPieceHandler(ctx context.Context) *PieceHandler {
 
 	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
-			// TODO: 1 - Select/Wait for a free compatible line
 			handler = sendToProduction(piece)
 
 			for {

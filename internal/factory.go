@@ -57,7 +57,6 @@ func InitFactory() *factory {
 
 	// TODO: Implement the stateUpdateFunc using OPCUA to communicate with the PLCs
 	stateUpdateFunc := func(f *factory) error {
-		// log.Println("[updateFactoryState] running update")
 		for _, line := range f.processLines {
 			if line.isReady() {
 				line.claimWaitingPiece()
@@ -104,7 +103,6 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 			nRegistered++
 		}
 	}
-	// log.Printf("[registerWaitingPiece] Registered %d lines for piece %s", nRegistered, piece.ErpIdentifier)
 
 	assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
 }
@@ -118,7 +116,9 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 	controlForm := factory.processLines[lineID].createBestForm(piece)
+
 	// TODO: controlForm.SendToPLC()
+
 	assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
@@ -132,7 +132,6 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 		useM2:     controlForm.processBot,
 	})
 
-	log.Printf("[sendToLine] Sending piece to line %s", lineID)
 	return &itemHandler{
 		transformCh: transformCh,
 		lineEntryCh: lineEntryCh,

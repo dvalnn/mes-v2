@@ -93,11 +93,6 @@ func startShipmentHandler(
 				return
 
 			case shipments := <-shipCh:
-				if len(shipments) == 0 {
-					log.Println("[ShipmentHandler] No shipments to process")
-					continue
-				}
-
 				for _, shipment := range shipments {
 					log.Printf(
 						"[ShipmentHandler] New shipment (id %d): %d pieces of type %v",

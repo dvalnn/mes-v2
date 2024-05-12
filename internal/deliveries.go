@@ -61,11 +61,6 @@ func startDeliveryHandler(ctx context.Context) *DeliveryHandler {
 				return
 
 			case deliveries := <-deliveryCh:
-
-				if len(deliveries) == 0 {
-					log.Println("[DeliveryHandler] No deliveries to process")
-				}
-
 				for _, delivery := range deliveries {
 					log.Printf(
 						"[DeliveryHandler] New delivery (id %v): %d pieces of type %v",
