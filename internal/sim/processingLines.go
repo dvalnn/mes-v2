@@ -3,7 +3,7 @@ package sim
 import (
 	u "mes/internal/utils"
 
-	plc "mes/internal/net/plc"
+	//plc "mes/internal/net/plc"
 	"sync"
 )
 
@@ -123,16 +123,16 @@ func PieceFromString(s string) int16 {
 }
 
 
-func (pcf *processControlForm) transformToCellCommand() *plc.CellCommand{
-	return &plc.CellCommand{
-		Index:      pcf.id,
-		Piece:      PieceFromString(pcf.pieceKind),
-		ProcessBot: pcf.processBot,
-		ProcessTop: pcf.processTop,
-		ToolBot:    ToolFromString(pcf.toolBot),
-		ToolTop:    ToolFromString(pcf.toolTop),
-	}
-}
+//func (pcf *processControlForm) transformToCellCommand() *plc.CellCommand{
+//	return &plc.CellCommand{
+//		Index:      pcf.id,
+//		Piece:      PieceFromString(pcf.pieceKind),
+//		ProcessBot: pcf.processBot,
+//		ProcessTop: pcf.processTop,
+//		ToolBot:    ToolFromString(pcf.toolBot),
+//		ToolTop:    ToolFromString(pcf.toolTop),
+//	}
+//}
 
 
 
