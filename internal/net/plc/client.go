@@ -29,6 +29,7 @@ func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
 	}
 
 	log.Print("Connecting...")
+	
 	err = new_client.Connect(context.Background())
 	if err != nil {
 		log.Printf("Error connecting to server: %s", err)
@@ -41,15 +42,16 @@ func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
 func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) {
 	rvs := make([]*ua.ReadValueID, len(vars))
 
-	for _, v := range vars {
+	for i , v := range vars {
 		rv, err := v.asReadValue()
 		if err != nil {
 			return nil, fmt.Errorf("[plc.WriteBatch] %s", err.Error())
 		}
-		rvs = append(rvs, rv)
+		rvs[i] = rv
 	}
 
 	request := ua.ReadRequest{NodesToRead: rvs}
+
 	response, err := client.Read(context.Background(), &request)
 	if err != nil {
 		return nil, fmt.Errorf("error writing to server: %s", err)
@@ -61,12 +63,12 @@ func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) 
 func Write(vars []opcuaVariable, client *opcua.Client) (*ua.WriteResponse, error) {
 	wvs := make([]*ua.WriteValue, len(vars))
 
-	for _, v := range vars {
+	for i , v := range vars {
 		wv, err := v.asWriteValue()
 		if err != nil {
 			return nil, fmt.Errorf("[plc.WriteBatch] %s", err.Error())
 		}
-		wvs = append(wvs, wv)
+		wvs[i] = wv
 	}
 
 	request := ua.WriteRequest{NodesToWrite: wvs}
