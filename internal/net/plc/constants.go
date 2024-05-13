@@ -126,8 +126,7 @@ const (
 )
 
 
-
-type Place_holder_cell_struct struct {
+type cellCommand struct {
 	Index      OpcuaInt16
 	Piece      OpcuaInt16
 	ProcessBot OpcuaBool
@@ -137,17 +136,17 @@ type Place_holder_cell_struct struct {
 }
 
 // Contains the opcua variale for ID of the last processed command for a line
-type Place_holder_cell_control struct {
+type cellControl struct {
 	NewPieceID OpcuaInt16 // id of the piece that entered the line from W1
 	OutPieceID OpcuaInt16 // id of the piece that left the line to W2
 }
 
-type Place_holder_InputWarehouses struct {
+type InputWarehouses struct {
 	TxID  OpcuaInt16
 	Piece OpcuaInt16
 }
 
-type Place_holder_Warehouses struct {
+type Warehouses struct {
 	Quantity   OpcuaInt16
 	QuantityP1 OpcuaInt16
 	QuantityP2 OpcuaInt16

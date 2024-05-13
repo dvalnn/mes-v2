@@ -1,13 +1,10 @@
 package plc
 
 import (
-	"flag"
 	"context"
+	"flag"
 	"testing"
-
 )
-
-
 func TestConnection(t *testing.T) {
 
 	endpoint := flag.String(
@@ -26,13 +23,12 @@ func TestConnection(t *testing.T) {
 
 	defer client.Close(context.Background())
 
-
-	//populates the 
+	//populates the
 
 	t.Logf("Client connected successfully")
 }
 
-func TestRead(t *testing.T) {
+func TestReadAndWrite(t *testing.T) {
 	endpoint := flag.String(
 		"endpoint",
 		"opc.tcp://192.168.1.74:4840",
@@ -49,36 +45,39 @@ func TestRead(t *testing.T) {
 
 	defer client.Close(context.Background())
 
-	//populates the controller with the variables
+	cellControlReadForm := make([]*cellCommand, 6)
 
-	//read the variables
-	
-	cellControlReadForm := make([]*Place_holder_cell_struct, 1)
-
-	cellControlReadForm[0] = &Place_holder_cell_struct{
-		Index: NewOpcuaInt16(NODE_ID_CELL1_ID, 0),
-		Piece: NewOpcuaInt16(NODE_ID_CELL1_PIECE, 0),
-		ProcessBot: NewOpcuaBool(NODE_ID_CELL1_PROCESSBOT, false),
+	cellControlReadForm[0] = &cellCommand{
+		Index:      NewOpcuaInt16(NODE_ID_CELL1_ID, 1),
+		Piece:      NewOpcuaInt16(NODE_ID_CELL1_PIECE, 1),
+		ProcessBot: NewOpcuaBool(NODE_ID_CELL1_PROCESSBOT, true),
 		ProcessTop: NewOpcuaBool(NODE_ID_CELL1_PROCESSTOP, false),
-		ToolBot: NewOpcuaInt16(NODE_ID_CELL1_TOOLBOT, 0),
-		ToolTop: NewOpcuaInt16(NODE_ID_CELL1_TOOLTOP, 0),
+		ToolBot:    NewOpcuaInt16(NODE_ID_CELL1_TOOLBOT, 2),
+		ToolTop:    NewOpcuaInt16(NODE_ID_CELL1_TOOLTOP, 3),
 	}
 
-	//prints the cell control Read Form
-	//t.Logf("Cell Control Read Form: %v", cellControlReadForm[0].Index)
+	//inserts all the variablles of the cell control read form into a apcuavariable array
+	vars := []opcuaVariable{cellControlReadForm[0].Index,
+		cellControlReadForm[0].Piece,
+		cellControlReadForm[0].ProcessBot,
+		cellControlReadForm[0].ProcessTop,
+		cellControlReadForm[0].ToolBot,
+		cellControlReadForm[0].ToolTop}
 
-	//creates the OPCUA variables
-
-
-
-
-	//read the variables
-	readResponse, err := Read([]opcuaVariable{cellControlReadForm[0].Index}, client)
+	//prints the variables
+	readResponse, err := Read(vars, client)
 	if err != nil {
+	
 		t.Errorf("Error reading variables: %s", err)
 	}
-	readResponse.Results[0].Value.Value()
 
-	t.Logf("Response: %v", 	readResponse.Results[0].Value.Value())
-	
+	for _, v := range readResponse.Results {
+		t.Logf("Response: %s", v.Value.Value())
+	}
+	// write the variables
+	_, err = Write(vars, client)
+
+	if err != nil {
+		t.Errorf("Error writing variables: %s", err)
+	}
 }
