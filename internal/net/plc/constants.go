@@ -126,7 +126,7 @@ const (
 )
 
 
-type cellCommand struct {
+type CellCommand struct {
 	Index      OpcuaInt16
 	Piece      OpcuaInt16
 	ProcessBot OpcuaBool
@@ -136,7 +136,7 @@ type cellCommand struct {
 }
 
 // Contains the opcua variale for ID of the last processed command for a line
-type cellControl struct {
+type CellControl struct {
 	NewPieceID OpcuaInt16 // id of the piece that entered the line from W1
 	OutPieceID OpcuaInt16 // id of the piece that left the line to W2
 }

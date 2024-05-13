@@ -45,9 +45,9 @@ func TestReadAndWrite(t *testing.T) {
 
 	defer client.Close(context.Background())
 
-	cellControlReadForm := make([]*cellCommand, 6)
+	cellControlReadForm := make([]*CellCommand, 6)
 
-	cellControlReadForm[0] = &cellCommand{
+	cellControlReadForm[0] = &CellCommand{
 		Index:      NewOpcuaInt16(NODE_ID_CELL1_ID, 1),
 		Piece:      NewOpcuaInt16(NODE_ID_CELL1_PIECE, 1),
 		ProcessBot: NewOpcuaBool(NODE_ID_CELL1_PROCESSBOT, true),
