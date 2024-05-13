@@ -29,6 +29,7 @@ func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
 	}
 
 	log.Print("Connecting...")
+	
 	err = new_client.Connect(context.Background())
 	if err != nil {
 		log.Printf("Error connecting to server: %s", err)
