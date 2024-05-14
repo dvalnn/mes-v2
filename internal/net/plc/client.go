@@ -16,7 +16,6 @@ type opcuaVariable interface {
 
 type ClientConfig struct {
 	OpcuaEndpoint string
-	ErpEndpoint   string
 }
 
 func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
@@ -29,7 +28,7 @@ func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
 	}
 
 	log.Print("Connecting...")
-	
+
 	err = new_client.Connect(context.Background())
 	if err != nil {
 		log.Printf("Error connecting to server: %s", err)
@@ -42,7 +41,7 @@ func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
 func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) {
 	rvs := make([]*ua.ReadValueID, len(vars))
 
-	for i , v := range vars {
+	for i, v := range vars {
 		rv, err := v.asReadValue()
 		if err != nil {
 			return nil, fmt.Errorf("[plc.WriteBatch] %s", err.Error())
@@ -63,7 +62,7 @@ func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) 
 func Write(vars []opcuaVariable, client *opcua.Client) (*ua.WriteResponse, error) {
 	wvs := make([]*ua.WriteValue, len(vars))
 
-	for i , v := range vars {
+	for i, v := range vars {
 		wv, err := v.asWriteValue()
 		if err != nil {
 			return nil, fmt.Errorf("[plc.WriteBatch] %s", err.Error())
