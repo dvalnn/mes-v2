@@ -2,6 +2,7 @@ package sim
 
 import (
 	"context"
+	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"testing"
 	"time"
@@ -323,5 +324,32 @@ func TestPruneDeadWaiters(t *testing.T) {
 	pLine.pruneDeadWaiters()
 	if len(pLine.waitingPieces) != 1 {
 		t.Fatalf("Expected 1 waiter to be alive, got %d", len(pLine.waitingPieces))
+	}
+}
+
+func TestTransformCellCommand(t *testing.T) {
+
+	// creates a dummy process control form
+	pcf := &processControlForm{
+		toolTop:    u.TOOL_1,
+		toolBot:    u.TOOL_1,
+		pieceKind:  u.P_KIND_1,
+		processTop: true,
+		processBot: false,
+		id:         1,
+	}
+
+	result := pcf.transformToCellCommand()
+	expected := &plc.CellCommand{
+		TxId:       plc.OpcuaInt16{Value: 1},
+		PieceKind:  plc.OpcuaInt16{Value: 1},
+		ProcessBot: plc.OpcuaBool{Value: false},
+		ProcessTop: plc.OpcuaBool{Value: true},
+		ToolBot:    plc.OpcuaInt16{Value: 1},
+		ToolTop:    plc.OpcuaInt16{Value: 1},
+	}
+
+	if *result != *expected {
+		t.Fatalf("Expected %+v, got %+v", expected, result)
 	}
 }
