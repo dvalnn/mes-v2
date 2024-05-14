@@ -31,7 +31,7 @@ func TestConnection(t *testing.T) {
 func TestReadAndWrite(t *testing.T) {
 	endpoint := flag.String(
 		"endpoint",
-		"opc.tcp://192.168.1.74:4840",
+		"opc.tcp://10.227.157.49:4840",
 		"OPC UA Server Endpoint URL")
 
 	config := ClientConfig{
@@ -48,12 +48,12 @@ func TestReadAndWrite(t *testing.T) {
 	cellControlReadForm := make([]*CellCommand, 6)
 
 	cellControlReadForm[0] = &CellCommand{
-		TxId:       NewOpcuaInt16(NODE_ID_CELL1_ID, 1),
-		PieceKind:  NewOpcuaInt16(NODE_ID_CELL1_PIECE, 1),
-		ProcessBot: NewOpcuaBool(NODE_ID_CELL1_PROCESSBOT, true),
-		ProcessTop: NewOpcuaBool(NODE_ID_CELL1_PROCESSTOP, false),
-		ToolBot:    NewOpcuaInt16(NODE_ID_CELL1_TOOLBOT, 2),
-		ToolTop:    NewOpcuaInt16(NODE_ID_CELL1_TOOLTOP, 3),
+		TxId:       NewOpcuaInt16(NODE_ID_CELLS + "1" + CELL_ID_POSTFIX, 1),
+		PieceKind:  NewOpcuaInt16(NODE_ID_CELLS + "1" + CELL_PIECE_POSTFIX, 1),
+		ProcessBot: NewOpcuaBool(NODE_ID_CELLS + "1" + CELL_PROCESSBOT_POSTFIX, true),
+		ProcessTop: NewOpcuaBool(NODE_ID_CELLS + "1" + CELL_PROCESSTOP_POSTFIX, false),
+		ToolBot:    NewOpcuaInt16(NODE_ID_CELLS + "1" + CELL_TOOLBOT_POSTFIX, 1),
+		ToolTop:    NewOpcuaInt16(NODE_ID_CELLS + "1" + CELL_TOOLTOP_POSTFIX, 1),
 	}
 
 	// inserts all the variablles of the cell control read form into a apcuavariable array
@@ -80,4 +80,14 @@ func TestReadAndWrite(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
+
+	readResponse, err = Read(vars, client)
+	if err != nil {
+		t.Errorf("Error reading variables: %s", err)
+	}
+
+	for _, v := range readResponse.Results {
+		t.Logf("Response: %s", v.Value.Value())
+	}
+
 }
