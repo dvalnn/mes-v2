@@ -21,13 +21,13 @@ type InputWarehouses struct {
 
 type Warehouses struct {
 	Quantity   OpcuaInt16
-	QuantityP1 OpcuaInt16
-	QuantityP2 OpcuaInt16
-	QuantityP3 OpcuaInt16
-	QuantityP4 OpcuaInt16
-	QuantityP5 OpcuaInt16
-	QuantityP6 OpcuaInt16
-	QuantityP7 OpcuaInt16
-	QuantityP8 OpcuaInt16
-	QuantityP9 OpcuaInt16
+	//QuantityP1 OpcuaInt16
+	//QuantityP2 OpcuaInt16
+	//QuantityP3 OpcuaInt16
+	//QuantityP4 OpcuaInt16
+	//QuantityP5 OpcuaInt16
+	//QuantityP6 OpcuaInt16
+	//QuantityP7 OpcuaInt16
+	//QuantityP8 OpcuaInt16
+	//QuantityP9 OpcuaInt16
 }
