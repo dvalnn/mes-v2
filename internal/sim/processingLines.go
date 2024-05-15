@@ -1,15 +1,10 @@
 package sim
 
 import (
-	u "mes/internal/utils"
 	plc "mes/internal/net/plc"
-	
+	u "mes/internal/utils"
 	"sync"
 )
-
-type SupplyLine struct{}
-
-type DeliveryLine struct{}
 
 type Machine struct {
 	name  string
@@ -77,63 +72,60 @@ type processControlForm struct {
 	processBot bool
 }
 
-func ToolFromString(s string) int16 {
-    switch s {
-    case "T1":
-        return 1
-    case "T2":
-        return 2
-    case "T3":
-        return 3
-    case "T4":
-        return 4
-    case "T5":
-        return 5
-    case "T6":
-        return 6
-    default:
-        return 0
-    }
-}
-
-
-func PieceFromString(s string) int16 {
-    switch s {
-    case "P1":
-        return 1
-    case "P2":
-        return 2
-    case "P3":
-        return 3
-    case "P4":
-        return 4
-    case "P5":
-        return 5
-    case "P6":
-        return 6
-    case "P7":
-        return 7
-    case "P8":
-        return 8
-    case "P9":
-        return 9
-    default:
-        return 0
-    }
-}
-
-
-func (pcf *processControlForm) transformToCellCommand() *plc.CellCommand{
-	return &plc.CellCommand{
-		TxId: plc.OpcuaInt16{Value:  pcf.id,},
-		PieceKind: plc.OpcuaInt16{Value: PieceFromString(pcf.pieceKind),},
-		ProcessBot: plc.OpcuaBool{Value: pcf.processBot,},
-		ProcessTop: plc.OpcuaBool{Value: pcf.processTop,},
-		ToolBot: plc.OpcuaInt16{Value: ToolFromString(pcf.toolBot),},
-		ToolTop: plc.OpcuaInt16{Value: ToolFromString(pcf.toolTop),},
+func ToolStrToInt(s string) int16 {
+	switch s {
+	case "T1":
+		return 1
+	case "T2":
+		return 2
+	case "T3":
+		return 3
+	case "T4":
+		return 4
+	case "T5":
+		return 5
+	case "T6":
+		return 6
+	default:
+		return 0
 	}
 }
 
+func PieceStrToInt(s string) int16 {
+	switch s {
+	case "P1":
+		return 1
+	case "P2":
+		return 2
+	case "P3":
+		return 3
+	case "P4":
+		return 4
+	case "P5":
+		return 5
+	case "P6":
+		return 6
+	case "P7":
+		return 7
+	case "P8":
+		return 8
+	case "P9":
+		return 9
+	default:
+		return 0
+	}
+}
+
+func (pcf *processControlForm) transformToCellCommand() *plc.CellCommand {
+	return &plc.CellCommand{
+		TxId:       plc.OpcuaInt16{Value: pcf.id},
+		PieceKind:  plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
+		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
+		ProcessTop: plc.OpcuaBool{Value: pcf.processTop},
+		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
+		ToolTop:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolTop)},
+	}
+}
 
 func (pl *ProcessingLine) isReady() bool {
 	return pl.readyForNext

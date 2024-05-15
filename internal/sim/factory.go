@@ -3,10 +3,19 @@ package sim
 import (
 	"context"
 	"log"
+	"mes/internal/net/plc"
 	u "mes/internal/utils"
 	"sync"
 	"time"
 )
+
+type factory struct {
+	processLines    map[string]*ProcessingLine
+	stateUpdateFunc func(*factory) error
+	supplyLines     []*plc.SupplyLine
+	warehouses      []*plc.Warehouse
+	// deliveryLines   plc.
+}
 
 var (
 	factoryInstance *factory
@@ -30,11 +39,14 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 	return factoryInstance, factoryMutex
 }
 
-type factory struct {
-	processLines    map[string]*ProcessingLine
-	stateUpdateFunc func(*factory) error
-	supplyLines     []SupplyLine
-	deliveryLines   []DeliveryLine
+func factoryStateUpdate(f *factory) error {
+	for _, line := range f.processLines {
+		if line.isReady() {
+			line.claimWaitingPiece()
+		}
+		line.progressItems()
+	}
+	return nil
 }
 
 func InitFactory() *factory {
@@ -57,21 +69,12 @@ func InitFactory() *factory {
 	}
 
 	// TODO: Implement the stateUpdateFunc using OPCUA to communicate with the PLCs
-	stateUpdateFunc := func(f *factory) error {
-		for _, line := range f.processLines {
-			if line.isReady() {
-				line.claimWaitingPiece()
-			}
-			line.progressItems()
-		}
-		return nil
-	}
-
+	stateUpdateFunc := factoryStateUpdate
 	return &factory{
 		processLines:    processLines,
-		supplyLines:     []SupplyLine{},
-		deliveryLines:   []DeliveryLine{},
 		stateUpdateFunc: stateUpdateFunc,
+		supplyLines:     plc.InitSupplyLines(),
+		warehouses:      []*plc.Warehouse{},
 	}
 }
 
@@ -166,24 +169,12 @@ func sendToProduction(
 	return sendToLine(line, &piece)
 }
 
-func updateFactoryState() {
+func runFactoryStateUpdateFunc() {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
 	err := factory.stateUpdateFunc(factory)
 	u.Assert(err == nil, "[updateFactoryState] Error updating factory state")
-}
-
-func progressFreeLines() {
-	factory, mutex := getFactoryInstance()
-	defer mutex.Unlock()
-	for _, line := range factory.processLines {
-		if line.isReady() {
-			// TODO: progress the line until the id of the item that leaves
-			// matches the last item left reported by the plc
-			line.progressItems()
-		}
-	}
 }
 
 func StartFactoryHandler(ctx context.Context) <-chan error {
@@ -203,7 +194,7 @@ func StartFactoryHandler(ctx context.Context) <-chan error {
 				time.Sleep(250 * time.Millisecond)
 
 				// 2 - update the line status for any line that progressed
-				updateFactoryState()
+				runFactoryStateUpdateFunc()
 			}
 		}
 	}()
