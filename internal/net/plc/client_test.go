@@ -9,23 +9,20 @@ import (
 
 // ! NEEDS CODESYS TO BE RUNNING
 func TestConnection(t *testing.T) {
-	endpoint := flag.String(
-		"endpoint",
-		"opc.tcp://192.168.1.74:4840",
-		"OPC UA Server Endpoint URL")
+	// endpoint := flag.String(
+	// 	"endpoint",
+	// 	"opc.tcp://192.168.1.74:4840",
+	// 	"OPC UA Server Endpoint URL")
 
-	config := ClientConfig{
-		OpcuaEndpoint: *endpoint,
-	}
-
-	client := config.ConnectOpcua()
+	client := NewClient(OPCUA_ENDPOINT)
 	if client == nil {
 		t.Errorf("Error connecting to server")
 	}
-
+	err := client.Connect(context.Background())
+	if err != nil {
+		t.Errorf("Error connecting to server")
+	}
 	defer client.Close(context.Background())
-
-	// populates the
 
 	t.Logf("Client connected successfully")
 }
@@ -37,15 +34,14 @@ func TestReadAndWrite(t *testing.T) {
 		"opc.tcp://10.227.157.49:4840",
 		"OPC UA Server Endpoint URL")
 
-	config := ClientConfig{
-		OpcuaEndpoint: *endpoint,
-	}
-
-	client := config.ConnectOpcua()
+	client := NewClient(*endpoint)
 	if client == nil {
 		t.Errorf("Error connecting to server")
 	}
-
+	err := client.Connect(context.Background())
+	if err != nil {
+		t.Errorf("Error connecting to server")
+	}
 	defer client.Close(context.Background())
 
 	cellControl := make([]*CellCommand, 1)
@@ -100,24 +96,24 @@ func TestReadAndWrite(t *testing.T) {
 	}
 
 	// writes all the variables to teh server
-	_, err := Write(cellControlVar, client)
+	_, err = client.Write(cellControlVar)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
-	_, err = Write(inputWarehousesVar, client)
+	_, err = client.Write(inputWarehousesVar)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
-	_, err = Write(cellStateVar, client)
+	_, err = client.Write(cellStateVar)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
 	// reads from the server and compares with the expected values ,values written in the declaration of the variables
 
-	readResponse, err := Read(cellControlVar, client)
+	readResponse, err := client.Read(cellControlVar)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -140,7 +136,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = Read(inputWarehousesVar, client)
+	readResponse, err = client.Read(inputWarehousesVar)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -151,7 +147,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = Read(cellStateVar, client)
+	readResponse, err = client.Read(cellStateVar)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -162,7 +158,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = Read(totalWarehouseVar, client)
+	readResponse, err = client.Read(totalWarehouseVar)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}

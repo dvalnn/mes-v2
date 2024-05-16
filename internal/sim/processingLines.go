@@ -2,6 +2,7 @@ package sim
 
 import (
 	plc "mes/internal/net/plc"
+	"mes/internal/utils"
 	u "mes/internal/utils"
 	"sync"
 )
@@ -50,13 +51,30 @@ func initType1Conveyor() []Conveyor {
 
 	conveyor[u.LINE_DEFAULT_M2_POS] = Conveyor{
 		item:    nil,
-		machine: &Machine{name: "M2", tools: []string{u.TOOL_4, u.TOOL_5, u.TOOL_6}},
+		machine: &Machine{name: "M2", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
+	}
+
+	return conveyor
+}
+
+func initType2Conveyor() []Conveyor {
+	conveyor := make([]Conveyor, u.LINE_CONVEYOR_SIZE)
+
+	conveyor[u.LINE_DEFAULT_M1_POS] = Conveyor{
+		item:    nil,
+		machine: &Machine{name: "M3", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_5}},
+	}
+
+	conveyor[u.LINE_DEFAULT_M2_POS] = Conveyor{
+		item:    nil,
+		machine: &Machine{name: "M4", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_6}},
 	}
 
 	return conveyor
 }
 
 type ProcessingLine struct {
+	plc           *plc.Cell
 	id            string
 	conveyorLine  []Conveyor
 	waitingPieces []*freeLineWaiter
@@ -116,7 +134,7 @@ func PieceStrToInt(s string) int16 {
 	}
 }
 
-func (pcf *processControlForm) transformToCellCommand() *plc.CellCommand {
+func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 	return &plc.CellCommand{
 		TxId:       plc.OpcuaInt16{Value: pcf.id},
 		PieceKind:  plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
@@ -186,10 +204,11 @@ func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation)
 	return false
 }
 
-func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
+func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControlForm {
 	if pl.id == u.ID_L0 {
 		return &processControlForm{
 			pieceKind: piece.Kind,
+			id:        id,
 		}
 	}
 
@@ -214,15 +233,17 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 			toolTop:    currentStep.Tool,
 			toolBot:    toolBot,
 			pieceKind:  piece.Kind,
+			id:         id,
 			processTop: true,
 			processBot: chainSteps,
 		}
 	}
 
 	return &processControlForm{
-		toolTop:    currentStep.Tool, // doesn't matter as it's not used
+		toolTop:    currentStep.Tool,
 		toolBot:    currentStep.Tool,
 		pieceKind:  piece.Kind,
+		id:         id,
 		processTop: false,
 		processBot: true,
 	}
@@ -236,7 +257,7 @@ func (pl *ProcessingLine) addItem(item *conveyorItem) {
 	pl.conveyorLine[0].item = item
 }
 
-func (pl *ProcessingLine) progressItems() int16 {
+func (pl *ProcessingLine) progressConveyor() int16 {
 	inItem := pl.conveyorLine[0].item
 	if inItem != nil {
 		inItem.handler.lineEntryCh <- pl.id
@@ -268,4 +289,37 @@ func (pl *ProcessingLine) progressItems() int16 {
 	pl.readyForNext = true
 
 	return outID
+}
+
+func (pl *ProcessingLine) ProgressInternalState() {
+	reportedInPieceId := pl.plc.InPieceTxId()
+	lastCommandId := pl.plc.LastCommandTxId()
+	utils.Assert(
+		reportedInPieceId == lastCommandId,
+		"[factoryStateUpdate] In piece ID does not match last command ID",
+	)
+
+	reportedOutPieceId := pl.plc.OutPieceTxId()
+	iterations := utils.LINE_CONVEYOR_SIZE
+	for {
+		outPieceId := pl.progressConveyor()
+		utils.Assert(
+			outPieceId <= reportedOutPieceId,
+			"[factoryStateUpdate] Out piece ID is greater reported by the PLC",
+		)
+		if outPieceId == reportedOutPieceId {
+			break
+		}
+		utils.Assert(
+			iterations > 0,
+			"[factoryStateUpdate] Infinite loop detected in progressItems",
+		)
+		iterations--
+	}
+
+	utils.Assert(
+		pl.isReady(),
+		"[factoryStateUpdate] Line progressed but was not marked as ready",
+	)
+	pl.claimWaitingPiece()
 }

@@ -14,31 +14,32 @@ type opcuaVariable interface {
 	asWriteValue() (*ua.WriteValue, error)
 }
 
-type ClientConfig struct {
-	OpcuaEndpoint string
+type Client struct {
+	opcua *opcua.Client
 }
 
-func (config ClientConfig) ConnectOpcua() (client *opcua.Client) {
-	var new_client *opcua.Client
+func NewClient(opcuaEndpoint string) (client *Client) {
+	var opcuaClient *opcua.Client
 	var err error
 
-	new_client, err = opcua.NewClient(config.OpcuaEndpoint)
+	opcuaClient, err = opcua.NewClient(opcuaEndpoint)
 	if err != nil {
-		log.Printf("Error creating client: %s", err)
+		log.Printf("[plc] Error creating client: %s", err)
+		return nil
+	}
+	if opcuaClient == nil {
+		log.Fatal("[plc] opcuaClient is nil")
+		return nil
 	}
 
-	log.Print("Connecting...")
-
-	err = new_client.Connect(context.Background())
-	if err != nil {
-		log.Printf("Error connecting to server: %s", err)
-	}
-	log.Println("Client connected successfully.")
-
-	return new_client
+	return &Client{opcua: opcuaClient}
 }
 
-func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) {
+func (c *Client) Connect(ctx context.Context) error {
+	return c.opcua.Connect(ctx)
+}
+
+func (c *Client) Read(vars []opcuaVariable, ctx context.Context) (*ua.ReadResponse, error) {
 	rvs := make([]*ua.ReadValueID, len(vars))
 
 	for i, v := range vars {
@@ -51,7 +52,7 @@ func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) 
 
 	request := ua.ReadRequest{NodesToRead: rvs}
 
-	response, err := client.Read(context.Background(), &request)
+	response, err := c.opcua.Read(ctx, &request)
 	if err != nil {
 		return nil, fmt.Errorf("error writing to server: %s", err)
 	}
@@ -59,7 +60,7 @@ func Read(vars []opcuaVariable, client *opcua.Client) (*ua.ReadResponse, error) 
 	return response, nil
 }
 
-func Write(vars []opcuaVariable, client *opcua.Client) (*ua.WriteResponse, error) {
+func (c *Client) Write(vars []opcuaVariable, ctx context.Context) (*ua.WriteResponse, error) {
 	wvs := make([]*ua.WriteValue, len(vars))
 
 	for i, v := range vars {
@@ -71,10 +72,14 @@ func Write(vars []opcuaVariable, client *opcua.Client) (*ua.WriteResponse, error
 	}
 
 	request := ua.WriteRequest{NodesToWrite: wvs}
-	response, err := client.Write(context.Background(), &request)
+	response, err := c.opcua.Write(ctx, &request)
 	if err != nil {
 		return nil, fmt.Errorf("error writing to server: %s", err)
 	}
 
 	return response, nil
+}
+
+func (c *Client) Close(ctx context.Context) {
+	c.opcua.Close(ctx)
 }

@@ -1,6 +1,8 @@
 package plc
 
-import "strconv"
+import (
+	"strconv"
+)
 
 type CellCommand struct {
 	TxId       OpcuaInt16
@@ -11,17 +13,67 @@ type CellCommand struct {
 	ToolTop    OpcuaInt16
 }
 
+func (cc *CellCommand) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&cc.TxId,
+		&cc.PieceKind,
+		&cc.ProcessBot,
+		&cc.ProcessTop,
+		&cc.ToolBot,
+		&cc.ToolTop,
+	}
+}
+
 type CellState struct {
 	TxIdPieceIN  OpcuaInt16 // tx id of the piece that entered the line
 	TxIdPieceOut OpcuaInt16 // tx id of the piece that left the line
 }
 
-type Cell struct {
-	command *CellCommand
-	state   *CellState
+func (cs *CellState) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&cs.TxIdPieceIN,
+		&cs.TxIdPieceOut,
+	}
 }
 
-func initCells() []*Cell {
+type Cell struct {
+	command *CellCommand
+
+	state    *CellState
+	oldState *CellState
+}
+
+func (c *Cell) StateOpcuaVars() []opcuaVariable {
+	c.oldState = c.state // save old state before updating
+	return c.state.OpcuaVars()
+}
+
+func (c *Cell) InPieceTxId() int16 {
+	return c.state.TxIdPieceIN.Value
+}
+
+func (c *Cell) OutPieceTxId() int16 {
+	return c.state.TxIdPieceOut.Value
+}
+
+func (c *Cell) CommandOpcuaVars() []opcuaVariable {
+	return c.command.OpcuaVars()
+}
+
+func (c *Cell) SetCommand(command *CellCommand) {
+	c.command = command
+}
+
+func (c *Cell) LastCommandTxId() int16 {
+	return c.command.TxId.Value
+}
+
+func (c *Cell) Progressed() bool {
+	return c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value ||
+		c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
+}
+
+func InitCells() []*Cell {
 	cells := make([]*Cell, NUMBER_OF_CELLS)
 
 	for i := range NUMBER_OF_CELLS {
@@ -37,7 +89,12 @@ func initCells() []*Cell {
 				ToolBot:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLBOT_POSTFIX},
 				ToolTop:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLTOP_POSTFIX},
 			},
+			// init old state = state
 			state: &CellState{
+				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
+				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
+			},
+			oldState: &CellState{
 				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
 				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
 			},
@@ -47,6 +104,7 @@ func initCells() []*Cell {
 	return cells
 }
 
+// TODO: add missing fields
 type SupplyLine struct {
 	TxId      OpcuaInt16
 	PieceKind OpcuaInt16
@@ -71,6 +129,18 @@ func InitSupplyLines() []*SupplyLine {
 	}
 
 	return supplyLines
+}
+
+func (s *SupplyLine) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&s.TxId,
+		&s.PieceKind,
+	}
+}
+
+func (s *SupplyLine) NewShipment(pieceKind int16) {
+	s.TxId.Value++
+	s.PieceKind.Value = pieceKind
 }
 
 type Warehouse struct {
@@ -101,4 +171,10 @@ func InitWarehouses() []*Warehouse {
 	}
 
 	return warehouses
+}
+
+func (w *Warehouse) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&w.Quantity,
+	}
 }

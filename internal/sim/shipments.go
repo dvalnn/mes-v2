@@ -104,21 +104,34 @@ func StartShipmentHandler(
 						shipment.MaterialKind,
 					)
 
-					// TODO: 1 - Communicate new shipments to the PLCs
+					// 1 - Communicate new shipments to the PLCs
 					log.Printf(
 						"[ShipmentHandler] Communicating shipment %d to PLCs",
 						shipment.ID,
 					)
-					time.Sleep(time.Second)
+					nArrived := 0
+					for nArrived < shipment.NPieces {
+						func() {
+							factory, mutex := getFactoryInstance()
+							defer mutex.Unlock()
 
-					// TODO: 2 - Wait for each shipment arrival to be confirmed
-					log.Printf(
-						"[ShipmentHandler] Waiting for shipment %d to arrive",
-						shipment.ID,
-					)
-					time.Sleep(time.Second)
+							writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+							defer cancel()
 
-					// 3 - Communicate the arrival of each shipment to the ERP
+							for i := 0; i < len(factory.supplyLines); i++ {
+								material := PieceStrToInt(shipment.MaterialKind)
+								factory.supplyLines[i].NewShipment(material)
+								factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
+								nArrived++
+							}
+						}()
+
+						// TODO: replace this with actual PLC communication meanwhile,
+						// 10 seconds should be enough for the PLCs to process the shipment
+						time.Sleep(10 * time.Second)
+					}
+
+					// 2 - Communicate the arrival of each shipment to the ERP
 					log.Printf("[ShipmentHandler] Shipment %d arrived", shipment.ID)
 					if err := shipment.arrived().Post(ctx); err != nil {
 						errCh <- fmt.Errorf(

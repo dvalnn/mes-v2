@@ -1,6 +1,7 @@
 package plc
 
 const (
+	OPCUA_ENDPOINT = "opc.tcp://192.168.1.74:4840"
 
 	// PATHS
 	CODESYS_PATH = "ns=4;s=|var|CODESYS Control Win V3 x64.Application."
@@ -18,7 +19,7 @@ const (
 	NODE_ID_WAREHOUSE_TOTAL = GVL_PATH + "totalW"
 
 	// CELL DATA
-	NUMBER_OF_CELLS         = 6
+	NUMBER_OF_CELLS         = 7
 	NODE_ID_CELL            = GVL_PATH + "cell"
 	CELL_ID_POSTFIX         = ".id"
 	CELL_PIECE_POSTFIX      = ".piece"
