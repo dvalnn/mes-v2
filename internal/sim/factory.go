@@ -3,7 +3,7 @@ package sim
 import (
 	"context"
 	"log"
-	"mes/internal/net/plc"
+	plc "mes/internal/net/plc"
 	"mes/internal/utils"
 	"sync"
 	"time"
@@ -65,6 +65,7 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 
 		}()
 
+		//! CHECK THIS CONDITION 
 		if !line.plc.Progressed() {
 			continue
 		}
@@ -169,11 +170,12 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 
 	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
 	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
-	writeResponse, err :=factory.plcClient.Write(controlForm.toCellCommand().OpcuaVars(), ctx)
+	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
+	writeResponse, err :=factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
 
-	log.Printf("Control Form: %+v", controlForm.toCellCommand())
+	log.Printf("Control Form: %+v", factory.processLines[lineID].plc.CommandOpcuaVars())
 	log.Printf("Write response: %+v", writeResponse.Results[0])
-
+	
 	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
 	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{

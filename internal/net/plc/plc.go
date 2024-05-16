@@ -61,6 +61,15 @@ func (c *Cell) UpdateState(response *ua.ReadResponse) {
 	c.state.TxIdPieceOut.Value = response.Results[1].Value.Value().(int16)
 }
 
+func (c *Cell) UpdateCommandOpcuaVars(pcf *CellCommand) {
+	c.command.TxId.Value = pcf.TxId.Value
+	c.command.PieceKind.Value = pcf.PieceKind.Value
+	c.command.ProcessBot.Value = pcf.ProcessBot.Value
+	c.command.ProcessTop.Value = pcf.ProcessTop.Value
+	c.command.ToolBot.Value = pcf.ToolBot.Value
+	c.command.ToolTop.Value = pcf.ToolTop.Value
+}
+
 func (c *Cell) InPieceTxId() int16 {
 	return c.state.TxIdPieceIN.Value
 }
@@ -81,8 +90,9 @@ func (c *Cell) LastCommandTxId() int16 {
 	return c.command.TxId.Value
 }
 
-func (c *Cell) Progressed() bool {
 
+//! REFACTOR THIS FUNCTION
+func (c *Cell) Progressed() bool {
 	if c.command.TxId.Value == 0 {
 		return true
 	}
