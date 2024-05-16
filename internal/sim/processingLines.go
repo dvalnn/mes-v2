@@ -2,7 +2,6 @@ package sim
 
 import (
 	plc "mes/internal/net/plc"
-	"mes/internal/utils"
 	u "mes/internal/utils"
 	"sync"
 )
@@ -294,30 +293,30 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 func (pl *ProcessingLine) ProgressInternalState() {
 	reportedInPieceId := pl.plc.InPieceTxId()
 	lastCommandId := pl.plc.LastCommandTxId()
-	utils.Assert(
+	u.Assert(
 		reportedInPieceId == lastCommandId,
 		"[factoryStateUpdate] In piece ID does not match last command ID",
 	)
 
 	reportedOutPieceId := pl.plc.OutPieceTxId()
-	iterations := utils.LINE_CONVEYOR_SIZE
+	iterations := u.LINE_CONVEYOR_SIZE
 	for {
 		outPieceId := pl.progressConveyor()
-		utils.Assert(
+		u.Assert(
 			outPieceId <= reportedOutPieceId,
 			"[factoryStateUpdate] Out piece ID is greater reported by the PLC",
 		)
 		if outPieceId == reportedOutPieceId {
 			break
 		}
-		utils.Assert(
+		u.Assert(
 			iterations > 0,
 			"[factoryStateUpdate] Infinite loop detected in progressItems",
 		)
 		iterations--
 	}
 
-	utils.Assert(
+	u.Assert(
 		pl.isReady(),
 		"[factoryStateUpdate] Line progressed but was not marked as ready",
 	)
