@@ -22,9 +22,6 @@ var (
 	factoryInstance *factory
 	factoryMutex    = &sync.Mutex{}
 	factoryOnce     sync.Once
-
-	controlID      int16
-	controlIDMutex = &sync.Mutex{}
 )
 
 func getFactoryInstance() (*factory, *sync.Mutex) {
@@ -46,7 +43,9 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 		func() {
 			readCtx, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
+			_, err := f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading warehouse")
+
 		}()
 	}
 
@@ -60,7 +59,10 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 		func() {
 			readCtx, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			f.plcClient.Read(line.plc.StateOpcuaVars(), readCtx)
+			readResponse, err := f.plcClient.Read(line.plc.StateOpcuaVars(), readCtx)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading line state")
+			line.plc.UpdateState(readResponse)
+
 		}()
 
 		if !line.plc.Progressed() {
@@ -126,14 +128,6 @@ func InitFactory() *factory {
 	}
 }
 
-func getNextControlID() int16 {
-	controlIDMutex.Lock()
-	defer controlIDMutex.Unlock()
-
-	controlID += 1
-	return controlID
-}
-
 func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
@@ -175,8 +169,12 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 
 	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
 	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
-	factory.plcClient.Write(controlForm.toCellCommand().OpcuaVars(), ctx)
+	writeResponse, err :=factory.plcClient.Write(controlForm.toCellCommand().OpcuaVars(), ctx)
 
+	log.Printf("Control Form: %+v", controlForm.toCellCommand())
+	log.Printf("Write response: %+v", writeResponse.Results[0])
+
+	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
 	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
@@ -237,8 +235,15 @@ func runFactoryStateUpdateFunc(ctx context.Context) {
 
 func StartFactoryHandler(ctx context.Context) <-chan error {
 	errCh := make(chan error)
+
 	// Connect to the factory floor plcs
-	time.Sleep(500 * time.Millisecond)
+	func() {
+		factory, mutex := getFactoryInstance()
+		defer mutex.Unlock()
+
+		err := factory.plcClient.Connect(ctx)
+		utils.Assert(err == nil, "[StartFactoryHandler] Error connecting to factory floor")
+	}()
 
 	// Start the factory floor
 	go func() {
@@ -249,6 +254,7 @@ func StartFactoryHandler(ctx context.Context) <-chan error {
 
 			default:
 				runFactoryStateUpdateFunc(ctx)
+				time.Sleep(3 * time.Second)
 			}
 		}
 	}()

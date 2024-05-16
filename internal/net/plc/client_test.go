@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+
+
 // ! NEEDS CODESYS TO BE RUNNING
 func TestConnection(t *testing.T) {
 	// endpoint := flag.String(
@@ -31,7 +33,7 @@ func TestConnection(t *testing.T) {
 func TestReadAndWrite(t *testing.T) {
 	endpoint := flag.String(
 		"endpoint",
-		"opc.tcp://10.227.157.49:4840",
+		"opc.tcp://192.168.1.74:4840",
 		"OPC UA Server Endpoint URL")
 
 	client := NewClient(*endpoint)
@@ -43,6 +45,8 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error connecting to server")
 	}
 	defer client.Close(context.Background())
+
+	ctx := context.Background()
 
 	cellControl := make([]*CellCommand, 1)
 	cellControl[0] = &CellCommand{
@@ -96,24 +100,24 @@ func TestReadAndWrite(t *testing.T) {
 	}
 
 	// writes all the variables to teh server
-	_, err = client.Write(cellControlVar)
+	_, err = client.Write(cellControlVar, ctx)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
-	_, err = client.Write(inputWarehousesVar)
+	_, err = client.Write(inputWarehousesVar, ctx)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
-	_, err = client.Write(cellStateVar)
+	_, err = client.Write(cellStateVar, ctx)
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
 
 	// reads from the server and compares with the expected values ,values written in the declaration of the variables
 
-	readResponse, err := client.Read(cellControlVar)
+	readResponse, err := client.Read(cellControlVar, ctx)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -136,7 +140,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = client.Read(inputWarehousesVar)
+	readResponse, err = client.Read(inputWarehousesVar, ctx)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -147,7 +151,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = client.Read(cellStateVar)
+	readResponse, err = client.Read(cellStateVar, ctx)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -158,7 +162,7 @@ func TestReadAndWrite(t *testing.T) {
 		t.Errorf("Error reading variables: %s", err)
 	}
 
-	readResponse, err = client.Read(totalWarehouseVar)
+	readResponse, err = client.Read(totalWarehouseVar, ctx)
 	if err != nil {
 		t.Errorf("Error reading variables: %s", err)
 	}
@@ -167,3 +171,70 @@ func TestReadAndWrite(t *testing.T) {
 		t.Logf("Response: %s", v.Value.Value())
 	}
 }
+
+
+func TestInitCells(t *testing.T) {
+	cells := InitCells()
+	if len(cells) != NUMBER_OF_CELLS {
+		t.Errorf("Error creating cells: %v", cells)
+	}
+	for _, cell := range cells {
+		if cell.command.TxId.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.command.PieceKind.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.command.ProcessBot.Value != false {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.command.ProcessTop.Value != false {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.command.ToolBot.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.command.ToolTop.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.state.TxIdPieceIN.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+		if cell.state.TxIdPieceOut.Value != 0 {
+			t.Errorf("Error creating cells: %v", cells)
+		}
+	}
+	t.Logf("Cells created successfully")
+}
+
+
+func TestInitSupplyLines(t *testing.T) {
+
+	supplyLines := InitSupplyLines()
+	if len(supplyLines) != NUMBER_OF_SUPPLY_LINES {
+		t.Errorf("Error creating supply lines: %v", supplyLines)
+	}
+	for _, supplyLine := range supplyLines {
+		if supplyLine.TxId.Value != 0 {
+			t.Errorf("Error creating supply lines: %v", supplyLines)
+		}
+		if supplyLine.PieceKind.Value != 0 {
+			t.Errorf("Error creating supply lines: %v", supplyLines)
+		}
+	}
+	t.Logf("Supply lines created successfully")
+}
+func TestInitWarehouse(t *testing.T) {
+	warehouses := InitWarehouses()
+	if len(warehouses) != NUMBER_OF_WAREHOUSES {
+		t.Errorf("Error creating warehouses: %v", warehouses)
+	}
+	for _, warehouse := range warehouses {
+		if warehouse.Quantity.Value != 0 {
+			t.Errorf("Error creating warehouses: %v", warehouses)
+		}
+	}
+	t.Logf("Warehouses created successfully")
+}
+
+

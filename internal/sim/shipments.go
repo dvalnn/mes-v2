@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"mes/internal/net/erp"
+	"mes/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -121,7 +122,8 @@ func StartShipmentHandler(
 							for i := 0; i < len(factory.supplyLines); i++ {
 								material := PieceStrToInt(shipment.MaterialKind)
 								factory.supplyLines[i].NewShipment(material)
-								factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
+								_,err := factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
+								utils.Assert(err == nil, "[ShipmentHandler] Error writing to supply line")
 								nArrived++
 							}
 						}()

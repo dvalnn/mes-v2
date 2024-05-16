@@ -274,7 +274,7 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
-	var outID int16 = -1
+	var outID int16 = 0
 	outItem := pl.conveyorLine[u.LINE_CONVEYOR_SIZE-1].item
 	if outItem != nil {
 		outItem.handler.lineExitCh <- pl.id

@@ -1,7 +1,10 @@
 package plc
 
 import (
+	"mes/internal/utils"
 	"strconv"
+
+	"github.com/gopcua/opcua/ua"
 )
 
 type CellCommand struct {
@@ -44,8 +47,18 @@ type Cell struct {
 }
 
 func (c *Cell) StateOpcuaVars() []opcuaVariable {
-	c.oldState = c.state // save old state before updating
 	return c.state.OpcuaVars()
+}
+
+func (c *Cell) UpdateState(response *ua.ReadResponse) {
+	utils.Assert(response != nil, "Response is nil")
+	utils.Assert(len(response.Results) == 2, "Cell state response has wrong number of results")
+	utils.Assert(response.Results[0].Value.Type() == ua.TypeIDInt16, "Cell state response has wrong type")
+	utils.Assert(response.Results[1].Value.Type() == ua.TypeIDInt16, "Cell state response has wrong type")
+
+	c.oldState = c.state // save old state before updating
+	c.state.TxIdPieceIN.Value = response.Results[0].Value.Value().(int16)
+	c.state.TxIdPieceOut.Value = response.Results[1].Value.Value().(int16)
 }
 
 func (c *Cell) InPieceTxId() int16 {
@@ -69,6 +82,11 @@ func (c *Cell) LastCommandTxId() int16 {
 }
 
 func (c *Cell) Progressed() bool {
+
+	if c.command.TxId.Value == 0 {
+		return true
+	}
+
 	return c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value ||
 		c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
 }
@@ -77,8 +95,9 @@ func InitCells() []*Cell {
 	cells := make([]*Cell, NUMBER_OF_CELLS)
 
 	for i := range NUMBER_OF_CELLS {
-		commandPrefix := NODE_ID_CELL + strconv.Itoa(i+1)
-		controlPrefix := NODE_ID_CELL_CONTROL + strconv.Itoa(i+1)
+
+		commandPrefix := NODE_ID_CELL + strconv.Itoa(i)
+		controlPrefix := NODE_ID_CELL_CONTROL + strconv.Itoa(i)
 
 		cells[i] = &Cell{
 			command: &CellCommand{
@@ -94,10 +113,7 @@ func InitCells() []*Cell {
 				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
 				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
 			},
-			oldState: &CellState{
-				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
-				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
-			},
+			oldState: nil,
 		}
 	}
 
@@ -159,7 +175,7 @@ type Warehouse struct {
 // QuantityP9 OpcuaInt16
 
 func InitWarehouses() []*Warehouse {
-	warehouses := make([]*Warehouse, NUMBER_OF_SUPPLY_LINES)
+	warehouses := make([]*Warehouse, NUMBER_OF_WAREHOUSES)
 
 	for i := range NUMBER_OF_WAREHOUSES {
 		warehouses[i] = &Warehouse{

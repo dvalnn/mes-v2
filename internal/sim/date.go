@@ -28,7 +28,7 @@ func DateCounter(ctx context.Context, sleepPeriod time.Duration) <-chan DateForm
 	go func() {
 		defer close(dateCh)
 
-		date := DateForm{1}
+		date := DateForm{3}
 		dateCh <- date
 
 		sleeper := time.NewTimer(sleepPeriod)
