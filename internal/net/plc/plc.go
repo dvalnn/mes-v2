@@ -56,7 +56,7 @@ func (c *Cell) UpdateState(response *ua.ReadResponse) {
 	utils.Assert(response.Results[0].Value.Type() == ua.TypeIDInt16, "Cell state response has wrong type")
 	utils.Assert(response.Results[1].Value.Type() == ua.TypeIDInt16, "Cell state response has wrong type")
 
-	c.oldState = c.state // save old state before updating
+	*c.oldState = *c.state // save old state before updating
 	c.state.TxIdPieceIN.Value = response.Results[0].Value.Value().(int16)
 	c.state.TxIdPieceOut.Value = response.Results[1].Value.Value().(int16)
 }
@@ -90,15 +90,16 @@ func (c *Cell) LastCommandTxId() int16 {
 	return c.command.TxId.Value
 }
 
-
-//! REFACTOR THIS FUNCTION
+// ! REFACTOR THIS FUNCTION
 func (c *Cell) Progressed() bool {
+
 	if c.command.TxId.Value == 0 {
 		return true
 	}
-
 	return c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value ||
+		c.state.TxIdPieceIN.Value == c.command.TxId.Value ||
 		c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
+
 }
 
 func InitCells() []*Cell {
@@ -120,10 +121,13 @@ func InitCells() []*Cell {
 			},
 			// init old state = state
 			state: &CellState{
-				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
-				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
+				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
+				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
 			},
-			oldState: nil,
+			oldState: &CellState{
+				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
+				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
+			},
 		}
 	}
 
