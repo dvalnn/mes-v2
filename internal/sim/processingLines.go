@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"log"
 	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"sync"
@@ -323,13 +324,19 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 func (pl *ProcessingLine) UpdateConveyor() {
 	if pl.plc.PieceEnteredM1() {
 		pl.ProgressNewPiece()
+		log.Printf("New piece ackd on line %s", pl.id)
 	}
 
-	if !pl.plc.PieceLeft() {
+	if pl.plc.PieceLeft() {
 		reportedOutPieceId := pl.plc.OutPieceTxId()
 		iterations := LINE_CONVEYOR_SIZE
 		for {
+			log.Printf(
+				"Progressing line %s, with conveyor state %v\n\tlooking for piece %d\n",
+				pl.id, pl.conveyorLine, reportedOutPieceId,
+			)
 			outPieceId := pl.progressConveyor()
+			log.Printf("Progressed conveyor to %v\n\toutPiece is %d\n", pl.conveyorLine, outPieceId)
 			if outPieceId == reportedOutPieceId {
 				break
 			}
