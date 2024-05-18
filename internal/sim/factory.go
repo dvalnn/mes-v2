@@ -29,7 +29,7 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 
 	if factoryInstance == nil {
 		factoryOnce.Do(func() {
-			factoryInstance = InitFactory()
+			factoryInstance = InitFactory(factoryStateUpdate)
 			log.Printf("[getFactoryInstance] Factory instance created")
 		})
 	}
@@ -63,12 +63,7 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 			line.plc.UpdateState(readResponse)
 		}()
 
-		//! CHECK THIS CONDITION
-		if !line.plc.Progressed() {
-			continue
-		}
-
-		line.ProgressInternalState()
+		line.UpdateConveyor()
 	}
 
 	return nil
@@ -76,23 +71,26 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 
 func mockFactoryStateUpdate(f *factory, _ context.Context) error {
 	for _, line := range f.processLines {
-		if line.isReady() {
+		if line.readyForNext {
 			line.claimWaitingPiece()
 		}
+		line.ProgressNewPiece()
 		line.progressConveyor()
 	}
 
 	return nil
 }
 
-func InitFactory() *factory {
+func InitFactory(
+	stateUpdateFunc func(*factory, context.Context) error,
+) *factory {
 	processLines := make(map[string]*ProcessingLine)
 	linePlcs := plc.InitCells()
 
 	processLines[utils.ID_L0] = &ProcessingLine{
 		plc:           linePlcs[0],
 		id:            utils.ID_L0,
-		conveyorLine:  make([]Conveyor, utils.LINE_CONVEYOR_SIZE),
+		conveyorLine:  make([]Conveyor, LINE_CONVEYOR_SIZE),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
@@ -117,10 +115,9 @@ func InitFactory() *factory {
 		}
 	}
 
-	stateUpdateFunc := factoryStateUpdate
 	return &factory{
 		processLines:    processLines,
-		stateUpdateFunc: stateUpdateFunc,
+		stateUpdateFunc: factoryStateUpdate,
 		plcClient:       plc.NewClient(plc.OPCUA_ENDPOINT),
 		supplyLines:     plc.InitSupplyLines(),
 		warehouses:      plc.InitWarehouses(),

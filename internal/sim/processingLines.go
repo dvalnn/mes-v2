@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"log"
 	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"sync"
@@ -42,14 +41,14 @@ type Conveyor struct {
 }
 
 func initType1Conveyor() []Conveyor {
-	conveyor := make([]Conveyor, u.LINE_CONVEYOR_SIZE)
+	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
-	conveyor[u.LINE_DEFAULT_M1_POS] = Conveyor{
+	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
 		item:    nil,
 		machine: &Machine{name: "M1", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
 	}
 
-	conveyor[u.LINE_DEFAULT_M2_POS] = Conveyor{
+	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
 		item:    nil,
 		machine: &Machine{name: "M2", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
 	}
@@ -58,14 +57,14 @@ func initType1Conveyor() []Conveyor {
 }
 
 func initType2Conveyor() []Conveyor {
-	conveyor := make([]Conveyor, u.LINE_CONVEYOR_SIZE)
+	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
-	conveyor[u.LINE_DEFAULT_M1_POS] = Conveyor{
+	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
 		item:    nil,
 		machine: &Machine{name: "M3", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_5}},
 	}
 
-	conveyor[u.LINE_DEFAULT_M2_POS] = Conveyor{
+	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
 		item:    nil,
 		machine: &Machine{name: "M4", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_6}},
 	}
@@ -146,10 +145,6 @@ func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 	}
 }
 
-func (pl *ProcessingLine) isReady() bool {
-	return pl.readyForNext
-}
-
 type freeLineWaiter struct {
 	claimed      <-chan struct{}
 	claimPieceCh chan<- string
@@ -174,7 +169,7 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 }
 
 func (pl *ProcessingLine) claimWaitingPiece() {
-	u.Assert(pl.isReady(), "[ProcessingLine.claimPiece] Processing line is not ready")
+	u.Assert(pl.readyForNext, "[ProcessingLine.claimPiece] Processing line is not ready")
 	pl.pruneDeadWaiters()
 
 loop:
@@ -214,8 +209,8 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 	}
 
 	currentStep := piece.Steps[piece.CurrentStep]
-	topCompatible := pl.isMachineCompatibleWith(u.LINE_DEFAULT_M1_POS, &currentStep)
-	botCompatible := pl.isMachineCompatibleWith(u.LINE_DEFAULT_M2_POS, &currentStep)
+	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, &currentStep)
+	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &currentStep)
 	if !topCompatible && !botCompatible {
 		return nil
 	}
@@ -227,7 +222,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		if piece.CurrentStep+1 < len(piece.Steps) {
 			nextStep := piece.Steps[piece.CurrentStep+1]
 			toolBot = nextStep.Tool
-			chainSteps = pl.isMachineCompatibleWith(u.LINE_DEFAULT_M2_POS, &nextStep)
+			chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
 		}
 
 		return &processControlForm{
@@ -251,84 +246,111 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 }
 
 func (pl *ProcessingLine) addItem(item *conveyorItem) {
-	u.Assert(pl.isReady(), "[ProcessingLine.addItem] Processing line is not ready")
+	u.Assert(pl.readyForNext, "[ProcessingLine.addItem] Processing line is not ready")
 	u.Assert(pl.conveyorLine[0].item == nil, "[ProcessingLine.addItem] Conveyor is not empty")
 
 	pl.readyForNext = false
 	pl.conveyorLine[0].item = item
 }
 
-func (pl *ProcessingLine) progressConveyor() int16 {
-	inItem := pl.conveyorLine[0].item
-	if inItem != nil {
-		inItem.handler.lineEntryCh <- pl.id
-	}
+// Moves the newest piece from the start of the conveyor line to the next slot
+// This is done separately from the conveyor logic to allow for the piece to be
+// acknowledged by the PLC before it is moved along the conveyor, confirming that
+// the command was received and processed correctly
+func (pl *ProcessingLine) ProgressNewPiece() {
+	u.AssertMultiple(
+		"[ProcessingLine.AckNewInPiece]",
+		[]u.Assertion{
+			{
+				Message:   "In piece ID does not match last command ID",
+				Condition: pl.plc.InPieceTxId() == pl.plc.LastCommandTxId(),
+			},
+			{
+				Message:   "No new piece to ACK",
+				Condition: pl.conveyorLine[0].item != nil,
+			},
+			{
+				Message:   "AckNewInPiece called on a line that is marked as ready",
+				Condition: !pl.readyForNext,
+			},
+			{
+				Message:   "[ProcessingLine.AckNewInPiece] Next conveyor slot is not empty",
+				Condition: pl.conveyorLine[1].item == nil,
+			},
+		})
 
-	m1 := pl.conveyorLine[u.LINE_DEFAULT_M1_POS].machine
-	m1Item := pl.conveyorLine[u.LINE_DEFAULT_M1_POS].item
+	// Not included in the AssertMultiple because it depends on item != nil
+	u.Assert(pl.conveyorLine[0].item.controlID == pl.plc.InPieceTxId(),
+		"In piece ID does not match the piece ID in the conveyor item",
+	)
+
+	pl.conveyorLine[0].item.handler.lineEntryCh <- pl.id
+	pl.conveyorLine[1].item = pl.conveyorLine[0].item
+	pl.readyForNext = true
+}
+
+// Moves the pieces along the conveyor line and sends the necessary signals to the
+// item handlers that handle the transformations and communication with the ERP
+func (pl *ProcessingLine) progressConveyor() int16 {
+	m1 := pl.conveyorLine[LINE_DEFAULT_M1_POS].machine
+	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
 	if m1 != nil && m1Item != nil && m1Item.useM1 {
 		m1Item.handler.transformCh <- pl.id
 	}
 
-	m2 := pl.conveyorLine[u.LINE_DEFAULT_M2_POS].machine
-	m2Item := pl.conveyorLine[u.LINE_DEFAULT_M2_POS].item
+	m2 := pl.conveyorLine[LINE_DEFAULT_M2_POS].machine
+	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
 	if m2 != nil && m2Item != nil && m2Item.useM2 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
-	outItem := pl.conveyorLine[u.LINE_CONVEYOR_SIZE-1].item
+	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
 	if outItem != nil {
 		outItem.handler.lineExitCh <- pl.id
 		pl.lastLeftPieceId = outItem.controlID
 	}
+
 	// Move items along the conveyor line
-	for i := u.LINE_CONVEYOR_SIZE - 1; i > 0; i-- {
+	// (except the first one that needs to be ACKed)
+	for i := LINE_CONVEYOR_SIZE - 1; i > 1; i-- {
 		pl.conveyorLine[i].item = pl.conveyorLine[i-1].item
 	}
-	pl.conveyorLine[0].item = nil
-	pl.readyForNext = true
+	pl.conveyorLine[1].item = nil
 
 	return pl.lastLeftPieceId
 }
 
-func (pl *ProcessingLine) ProgressInternalState() {
-	reportedInPieceId := pl.plc.InPieceTxId()
-	lastCommandId := pl.plc.LastCommandTxId()
-	u.Assert(
-		reportedInPieceId == lastCommandId,
-		"[ProcessingLine.factoryStateUpdate] In piece ID does not match last command ID",
-	)
-
-	reportedOutPieceId := pl.plc.OutPieceTxId()
-	iterations := u.LINE_CONVEYOR_SIZE
-	log.Printf(
-		"[ProcessingLine.ProgressInternalState] line: %v reportedOutPieceId: %v\n",
-		pl.id, reportedOutPieceId,
-	)
-
-	// TODO: Check if this logic is correct since the first assertion is failing
-	for {
-		log.Printf("[ProcessingLine.ProgressInternalState] Iteration: %v\n", iterations)
-		log.Printf("[ProcessingLine.ProgressInternalState] Conveyor: %+v\n", pl.conveyorLine)
-		outPieceId := pl.progressConveyor()
-		log.Printf("[ProcessingLine.ProgressInternalState] outPieceId: %v\n", outPieceId)
-		if outPieceId == reportedOutPieceId {
-			break
-		}
-		u.Assert(
-			outPieceId < reportedOutPieceId,
-			"[ProcessingLine.ProgressInternalState] Out piece ID is greater reported by the PLC",
-		)
-		u.Assert(
-			iterations > 0,
-			"[ProcessingLine.ProgressInternalState] Infinite loop detected in progressItems",
-		)
-		iterations--
+func (pl *ProcessingLine) UpdateConveyor() {
+	if pl.plc.PieceEnteredM1() {
+		pl.ProgressNewPiece()
 	}
 
-	u.Assert(
-		pl.isReady(),
-		"[ProcessingLine.ProgressInternalState] Line progressed but was not marked as ready",
-	)
-	pl.claimWaitingPiece()
+	if !pl.plc.PieceLeft() {
+		reportedOutPieceId := pl.plc.OutPieceTxId()
+		iterations := LINE_CONVEYOR_SIZE
+		for {
+			outPieceId := pl.progressConveyor()
+			if outPieceId == reportedOutPieceId {
+				break
+			}
+			iterations--
+
+			u.AssertMultiple(
+				"[ProcessingLine.ProgressInternalState]",
+				[]u.Assertion{
+					{
+						Message:   "Out piece ID is greater reported by the PLC",
+						Condition: outPieceId < reportedOutPieceId,
+					}, {
+						Message:   "Infinite loop detected in progressItems",
+						Condition: iterations > 0,
+					},
+				},
+			)
+		}
+	}
+
+	if pl.readyForNext {
+		pl.claimWaitingPiece()
+	}
 }

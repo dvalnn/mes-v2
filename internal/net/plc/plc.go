@@ -90,14 +90,15 @@ func (c *Cell) LastCommandTxId() int16 {
 	return c.command.TxId.Value
 }
 
-// ! REFACTOR THIS FUNCTION
-func (c *Cell) Progressed() bool {
-	if c.command.TxId.Value == 0 {
-		return true
-	}
-	return c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value ||
-		// c.state.TxIdPieceIN.Value == c.command.TxId.Value ||
-		c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
+// Returns true if a command was started (piece entered the cell)
+func (c *Cell) PieceEnteredM1() bool {
+	return c.state.TxIdPieceIN == c.command.TxId &&
+		c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value
+}
+
+// Returns true if a command was completed (piece left the cell)
+func (c *Cell) PieceLeft() bool {
+	return c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
 }
 
 func InitCells() []*Cell {
