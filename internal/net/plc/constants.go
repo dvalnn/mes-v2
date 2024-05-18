@@ -8,9 +8,15 @@ const (
 	GVL_PATH     = CODESYS_PATH + "GVL."
 	POU_PATH     = CODESYS_PATH + "POU."
 
+	// FACTORY INPUTS
+	//|var|CODESYS Control Win V3 x64.Application.POU.id_in4
+	//|var|CODESYS Control Win V3 x64.Application.POU.id_in4
+	
 	// Supply Lines Node Data
 	NUMBER_OF_SUPPLY_LINES    = 4
 	NODE_ID_SUPPLY_LINE       = GVL_PATH + "cin"
+	NODE_ID_IDX_SUPPLY_LINE   = POU_PATH + "id_in"
+
 	SUPPLY_LINE_ID_POSTFIX    = ".id"
 	SUPPLY_LINE_PIECE_POSTFIX = ".piece"
 
@@ -32,4 +38,15 @@ const (
 	NODE_ID_CELL_CONTROL     = POU_PATH + "id"
 	CELL_CONTROL_IN_POSTFIX  = "_i"
 	CELL_CONTROL_OUT_POSTFIX = "_o"
+
+
+
+	//FACTORY OUTPUT 
+	NUMBER_OF_OUTPUTS = 4
+	NODE_ID_OUTPUTS = GVL_PATH + "roller"
+	OUTPUT_ID_POSTFIX = ".id"
+	OUTPUT_NP_POSTFIX = ".np"
+	OUTPUT_PIECE_POSTFIX = ".piece"
+
+
 )

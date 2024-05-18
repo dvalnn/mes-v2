@@ -75,6 +75,14 @@ func TestReadAndWrite(t *testing.T) {
 		Quantity: NewOpcuaInt16(NODE_ID_WAREHOUSE_TOTAL+strconv.Itoa(1), 1),
 	}
 
+	outputs := make([]*FactoryOutput, 1)
+	outputs[0] = &FactoryOutput{
+		TxId:   	NewOpcuaInt16(NODE_ID_OUTPUTS+"1"+OUTPUT_ID_POSTFIX, 1),
+		Np:     NewOpcuaInt16(NODE_ID_OUTPUTS+"1"+OUTPUT_NP_POSTFIX, 1),
+		Piece:  NewOpcuaInt16(NODE_ID_OUTPUTS+"1"+OUTPUT_PIECE_POSTFIX, 1),
+	}
+
+
 	// inserts all the variables of the cell control read form into a apcuavariable array
 	cellControlVar := []opcuaVariable{
 		cellControl[0].TxId,
@@ -93,6 +101,12 @@ func TestReadAndWrite(t *testing.T) {
 	cellStateVar := []opcuaVariable{
 		cellState[0].TxIdPieceIN,
 		cellState[0].TxIdPieceOut,
+	}
+
+	outputsVar := []opcuaVariable{
+		outputs[0].TxId,
+		outputs[0].Np,
+		outputs[0].Piece,
 	}
 
 	totalWarehouseVar := []opcuaVariable{
@@ -114,6 +128,12 @@ func TestReadAndWrite(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error writing variables: %s", err)
 	}
+
+	_, err = client.Write(outputsVar, ctx)
+	if err != nil {
+		t.Errorf("Error writing variables: %s", err)
+	}
+
 
 	// reads from the server and compares with the expected values ,values written in the declaration of the variables
 
@@ -170,6 +190,22 @@ func TestReadAndWrite(t *testing.T) {
 	for _, v := range readResponse.Results {
 		t.Logf("Response: %s", v.Value.Value())
 	}
+
+	readResponse, err = client.Read(outputsVar, ctx)
+	if err != nil {
+		t.Errorf("Error reading variables: %s", err)
+	}
+	if readResponse.Results[0].Value.Value() != outputs[0].TxId.Value {
+		t.Errorf("Error reading variables: %s", err)
+	}
+	if readResponse.Results[1].Value.Value() != outputs[0].Np.Value {
+		t.Errorf("Error reading variables: %s", err)
+	}
+	if readResponse.Results[2].Value.Value() != outputs[0].Piece.Value {
+		t.Errorf("Error reading variables: %s", err)
+	}
+
+
 }
 
 

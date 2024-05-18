@@ -207,3 +207,73 @@ func (w *Warehouse) OpcuaVars() []opcuaVariable {
 		&w.Quantity,
 	}
 }
+
+
+type FactoryOutput struct {
+	TxId    OpcuaInt16
+	Np    OpcuaInt16
+	Piece OpcuaInt16
+}
+
+func InitOutputs() []*FactoryOutput {
+
+	outputs := make([]*FactoryOutput, NUMBER_OF_OUTPUTS)
+
+	for i := range NUMBER_OF_OUTPUTS {
+		nodeIDPrefix := NODE_ID_OUTPUTS + strconv.Itoa(i+1)
+
+		outputs[i] = &FactoryOutput{
+			TxId: OpcuaInt16{
+				nodeID: nodeIDPrefix + OUTPUT_ID_POSTFIX,
+				Value:  0,
+			},
+			Np: OpcuaInt16{
+				nodeID: nodeIDPrefix + OUTPUT_NP_POSTFIX,
+				Value:  0,
+			},
+			Piece: OpcuaInt16{
+				nodeID: nodeIDPrefix + OUTPUT_PIECE_POSTFIX,
+				Value:  0,
+			},
+		}
+	}
+
+	return outputs
+}
+
+func (fo *FactoryOutput) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&fo.TxId,
+		&fo.Np,
+		&fo.Piece,
+	}
+}
+
+type FactoryIn struct {
+	TxId OpcuaInt16
+}
+
+func InitFactoryIn() []*FactoryIn {
+	
+	inputs := make([]*FactoryIn, NUMBER_OF_SUPPLY_LINES)
+
+	for i := range NUMBER_OF_SUPPLY_LINES {
+		nodeIDPrefix := NODE_ID_IDX_SUPPLY_LINE + strconv.Itoa(i+1)
+
+		inputs[i] = &FactoryIn{
+			TxId: OpcuaInt16{
+				nodeID: nodeIDPrefix,
+				Value:  0,
+			},
+		}
+
+	}
+	return inputs
+}
+
+func (fi *FactoryIn) OpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&fi.TxId,
+	}
+}
+
