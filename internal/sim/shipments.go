@@ -112,6 +112,7 @@ func StartShipmentHandler(
 					)
 					nArrived := 0
 					for nArrived < shipment.NPieces {
+						// NOTE: Running in a func to defer the mutex unlock
 						func() {
 							factory, mutex := getFactoryInstance()
 							defer mutex.Unlock()
@@ -120,9 +121,13 @@ func StartShipmentHandler(
 							defer cancel()
 
 							for i := 0; i < len(factory.supplyLines); i++ {
+								if nArrived >= shipment.NPieces {
+									break
+								}
+
 								material := PieceStrToInt(shipment.MaterialKind)
 								factory.supplyLines[i].NewShipment(material)
-								_,err := factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
+								_, err := factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
 								utils.Assert(err == nil, "[ShipmentHandler] Error writing to supply line")
 								nArrived++
 							}
