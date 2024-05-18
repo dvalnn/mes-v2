@@ -322,21 +322,16 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 }
 
 func (pl *ProcessingLine) UpdateConveyor() {
-	if pl.plc.PieceEnteredM1() {
-		pl.ProgressNewPiece()
-		log.Printf("New piece ackd on line %s", pl.id)
-	}
-
 	if pl.plc.PieceLeft() {
 		reportedOutPieceId := pl.plc.OutPieceTxId()
 		iterations := LINE_CONVEYOR_SIZE
 		for {
 			log.Printf(
-				"Progressing line %s, with conveyor state %v\n\tlooking for piece %d\n",
+				"Progressing line %s, with conveyor state %v\tlooking for piece %d\n",
 				pl.id, pl.conveyorLine, reportedOutPieceId,
 			)
 			outPieceId := pl.progressConveyor()
-			log.Printf("Progressed conveyor to %v\n\toutPiece is %d\n", pl.conveyorLine, outPieceId)
+			log.Printf("Progressed conveyor to %v\toutPiece is %d\n", pl.conveyorLine, outPieceId)
 			if outPieceId == reportedOutPieceId {
 				break
 			}
@@ -355,6 +350,25 @@ func (pl *ProcessingLine) UpdateConveyor() {
 				},
 			)
 		}
+	}
+
+	if pl.plc.PieceEnteredM1() {
+		log.Printf("New piece ackd on line %s\n", pl.id)
+		// This is here to handle cases where the command has been acked by the PLC
+		// but no pieces have left the conveyor yet. In this case, the conveyor should
+		// progress but there should not be an outPieceId to report
+		if pl.conveyorLine[1].item != nil {
+			log.Printf("Progressing conveyor on line %s (triggered by new piece)\n", pl.id)
+			// There should not be an out piece here, as it would have been caught by
+			// the previous progress loop in the pl.plc.PieceLeft() block
+			outItem := pl.progressConveyor()
+			u.Assert(
+				outItem == pl.lastLeftPieceId,
+				"[ProcessingLine.ProgressInternalState] Invalid conveyor state",
+			)
+			log.Printf("Conveyor progressed to %v\n", pl.conveyorLine)
+		}
+		pl.ProgressNewPiece()
 	}
 
 	if pl.readyForNext {
