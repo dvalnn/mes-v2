@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"log"
 	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"sync"
@@ -73,11 +74,12 @@ func initType2Conveyor() []Conveyor {
 }
 
 type ProcessingLine struct {
-	plc           *plc.Cell
-	id            string
-	conveyorLine  []Conveyor
-	waitingPieces []*freeLineWaiter
-	readyForNext  bool
+	plc             *plc.Cell
+	id              string
+	conveyorLine    []Conveyor
+	waitingPieces   []*freeLineWaiter
+	readyForNext    bool
+	lastLeftPieceId int16
 }
 
 type processControlForm struct {
@@ -274,11 +276,10 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 		m2Item.handler.transformCh <- pl.id
 	}
 
-	var outID int16 = 0
 	outItem := pl.conveyorLine[u.LINE_CONVEYOR_SIZE-1].item
 	if outItem != nil {
 		outItem.handler.lineExitCh <- pl.id
-		outID = outItem.controlID
+		pl.lastLeftPieceId = outItem.controlID
 	}
 	// Move items along the conveyor line
 	for i := u.LINE_CONVEYOR_SIZE - 1; i > 0; i-- {
@@ -287,7 +288,7 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 	pl.conveyorLine[0].item = nil
 	pl.readyForNext = true
 
-	return outID
+	return pl.lastLeftPieceId
 }
 
 func (pl *ProcessingLine) ProgressInternalState() {
@@ -295,30 +296,39 @@ func (pl *ProcessingLine) ProgressInternalState() {
 	lastCommandId := pl.plc.LastCommandTxId()
 	u.Assert(
 		reportedInPieceId == lastCommandId,
-		"[factoryStateUpdate] In piece ID does not match last command ID",
+		"[ProcessingLine.factoryStateUpdate] In piece ID does not match last command ID",
 	)
 
 	reportedOutPieceId := pl.plc.OutPieceTxId()
 	iterations := u.LINE_CONVEYOR_SIZE
+	log.Printf(
+		"[ProcessingLine.ProgressInternalState] line: %v reportedOutPieceId: %v\n",
+		pl.id, reportedOutPieceId,
+	)
+
+	// TODO: Check if this logic is correct since the first assertion is failing
 	for {
+		log.Printf("[ProcessingLine.ProgressInternalState] Iteration: %v\n", iterations)
+		log.Printf("[ProcessingLine.ProgressInternalState] Conveyor: %+v\n", pl.conveyorLine)
 		outPieceId := pl.progressConveyor()
-		u.Assert(
-			outPieceId <= reportedOutPieceId,
-			"[factoryStateUpdate] Out piece ID is greater reported by the PLC",
-		)
+		log.Printf("[ProcessingLine.ProgressInternalState] outPieceId: %v\n", outPieceId)
 		if outPieceId == reportedOutPieceId {
 			break
 		}
 		u.Assert(
+			outPieceId < reportedOutPieceId,
+			"[ProcessingLine.ProgressInternalState] Out piece ID is greater reported by the PLC",
+		)
+		u.Assert(
 			iterations > 0,
-			"[factoryStateUpdate] Infinite loop detected in progressItems",
+			"[ProcessingLine.ProgressInternalState] Infinite loop detected in progressItems",
 		)
 		iterations--
 	}
 
 	u.Assert(
 		pl.isReady(),
-		"[factoryStateUpdate] Line progressed but was not marked as ready",
+		"[ProcessingLine.ProgressInternalState] Line progressed but was not marked as ready",
 	)
 	pl.claimWaitingPiece()
 }

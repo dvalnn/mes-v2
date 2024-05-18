@@ -92,14 +92,12 @@ func (c *Cell) LastCommandTxId() int16 {
 
 // ! REFACTOR THIS FUNCTION
 func (c *Cell) Progressed() bool {
-
 	if c.command.TxId.Value == 0 {
 		return true
 	}
 	return c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value ||
-		c.state.TxIdPieceIN.Value == c.command.TxId.Value ||
+		// c.state.TxIdPieceIN.Value == c.command.TxId.Value ||
 		c.state.TxIdPieceOut.Value != c.oldState.TxIdPieceOut.Value
-
 }
 
 func InitCells() []*Cell {

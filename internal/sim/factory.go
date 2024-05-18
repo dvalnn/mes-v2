@@ -45,7 +45,6 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 			defer cancel()
 			_, err := f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading warehouse")
-
 		}()
 	}
 
@@ -62,10 +61,9 @@ func factoryStateUpdate(f *factory, ctx context.Context) error {
 			readResponse, err := f.plcClient.Read(line.plc.StateOpcuaVars(), readCtx)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading line state")
 			line.plc.UpdateState(readResponse)
-
 		}()
 
-		//! CHECK THIS CONDITION 
+		//! CHECK THIS CONDITION
 		if !line.plc.Progressed() {
 			continue
 		}
@@ -171,11 +169,11 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
 	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
 	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
-	writeResponse, err :=factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
+	writeResponse, err := factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
 
 	log.Printf("Control Form: %+v", factory.processLines[lineID].plc.CommandOpcuaVars())
 	log.Printf("Write response: %+v", writeResponse.Results[0])
-	
+
 	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
 	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
