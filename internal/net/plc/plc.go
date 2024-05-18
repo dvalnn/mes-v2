@@ -92,7 +92,7 @@ func (c *Cell) LastCommandTxId() int16 {
 
 // Returns true if a command was started (piece entered the cell)
 func (c *Cell) PieceEnteredM1() bool {
-	return c.state.TxIdPieceIN == c.command.TxId &&
+	return c.state.TxIdPieceIN.Value == c.command.TxId.Value &&
 		c.state.TxIdPieceIN.Value != c.oldState.TxIdPieceIN.Value
 }
 
