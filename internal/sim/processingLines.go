@@ -285,8 +285,10 @@ func (pl *ProcessingLine) ProgressNewPiece() {
 		"In piece ID does not match the piece ID in the conveyor item",
 	)
 
-	pl.conveyorLine[0].item.handler.lineEntryCh <- pl.id
-	pl.conveyorLine[1].item = pl.conveyorLine[0].item
+	nItem := pl.conveyorLine[0].item
+	pl.conveyorLine[0].item = nil
+	pl.conveyorLine[1].item = nItem
+	pl.conveyorLine[1].item.handler.lineEntryCh <- pl.id
 	pl.readyForNext = true
 }
 
