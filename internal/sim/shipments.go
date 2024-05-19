@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -117,7 +116,6 @@ func StartShipmentHandler(
 					nArrived := 0
 					for nArrived < shipment.NPieces {
 						// NOTE: Running in a func to defer the mutex unlock
-						ackWg := sync.WaitGroup{}
 						var expectedAcks []int16
 						func() {
 							factory, mutex := getFactoryInstance()
@@ -127,8 +125,6 @@ func StartShipmentHandler(
 							defer cancel()
 
 							for i := 0; i < len(factory.supplyLines); i++ {
-								ackWg.Add(1)
-
 								if nArrived >= shipment.NPieces {
 									break
 								}
@@ -145,21 +141,20 @@ func StartShipmentHandler(
 						}()
 
 						utils.Assert(len(expectedAcks) > 0, "[ShipmentHandler] No supply lines to write to")
+
 						// NOTE: Wait all expected shipments to arrive (be acked)
-						func() {
-							for len(expectedAcks) > 0 {
-								acked := <-shipAckCh
-								ackedIdx := -1
-								for i, ack := range expectedAcks {
-									if ack == acked {
-										ackedIdx = i
-										break
-									}
+						for len(expectedAcks) > 0 {
+							acked := <-shipAckCh
+							ackedIdx := -1
+							for i, ack := range expectedAcks {
+								if ack == acked {
+									ackedIdx = i
+									break
 								}
-								utils.Assert(ackedIdx != -1, "[ShipmentHandler] Unexpected ack")
-								expectedAcks = append(expectedAcks[:ackedIdx], expectedAcks[ackedIdx+1:]...)
 							}
-						}()
+							utils.Assert(ackedIdx != -1, "[ShipmentHandler] Unexpected ack")
+							expectedAcks = append(expectedAcks[:ackedIdx], expectedAcks[ackedIdx+1:]...)
+						}
 					}
 
 					// 2 - Communicate the arrival of each shipment to the ERP
