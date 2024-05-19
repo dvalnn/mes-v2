@@ -202,7 +202,8 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	opcuavars := factory.processLines[lineID].plc.CommandOpcuaVars()
 	writeResponse, err := factory.plcClient.Write(opcuavars, ctx)
 
-	log.Printf("[sendToLine] processForm: %v\tControl Form: %+v", controlForm, opcuavars)
+	log.Printf("[sendToLine] line:%v processForm:%v\n", lineID, controlForm)
+	log.Printf("[sendToLine] line:%v control form: %+v %+v %+v %+v %+v %+v\n", lineID, opcuavars[0] , opcuavars[1], opcuavars[2],opcuavars[3],opcuavars[4],opcuavars[5])
 	log.Printf("[sendToLine] Write response: %+v", writeResponse)
 
 	utils.Assert(err == nil, "[sendToLine] Error writing to PLC")
