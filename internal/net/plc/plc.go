@@ -133,26 +133,50 @@ func InitCells() []*Cell {
 	return cells
 }
 
-// TODO: add missing fields
-type SupplyLine struct {
+type SupplyLineCommand struct {
 	TxId      OpcuaInt16
 	PieceKind OpcuaInt16
+}
+
+type SupplyLineState struct {
+	TxAckId OpcuaInt16
+}
+
+type SupplyLine struct {
+	command  *SupplyLineCommand
+	state    *SupplyLineState
+	oldState *SupplyLineState
 }
 
 func InitSupplyLines() []*SupplyLine {
 	supplyLines := make([]*SupplyLine, NUMBER_OF_SUPPLY_LINES)
 
 	for i := range NUMBER_OF_SUPPLY_LINES {
-		nodeIDPrefix := NODE_ID_SUPPLY_LINE + strconv.Itoa(i+1)
+		commandNodeID := NODE_ID_SUPPLY_LINE + strconv.Itoa(i+1)
+		stateNodeID := NODE_ID_IDX_SUPPLY_LINE + strconv.Itoa(i+1)
 
 		supplyLines[i] = &SupplyLine{
-			TxId: OpcuaInt16{
-				nodeID: nodeIDPrefix + SUPPLY_LINE_ID_POSTFIX,
-				Value:  0,
+			command: &SupplyLineCommand{
+				TxId: OpcuaInt16{
+					nodeID: commandNodeID + SUPPLY_LINE_ID_POSTFIX,
+					Value:  0,
+				},
+				PieceKind: OpcuaInt16{
+					nodeID: commandNodeID + SUPPLY_LINE_PIECE_POSTFIX,
+					Value:  0,
+				},
 			},
-			PieceKind: OpcuaInt16{
-				nodeID: nodeIDPrefix + SUPPLY_LINE_PIECE_POSTFIX,
-				Value:  0,
+			state: &SupplyLineState{
+				TxAckId: OpcuaInt16{
+					nodeID: stateNodeID,
+					Value:  0,
+				},
+			},
+			oldState: &SupplyLineState{
+				TxAckId: OpcuaInt16{
+					nodeID: stateNodeID,
+					Value:  0,
+				},
 			},
 		}
 	}
@@ -160,32 +184,44 @@ func InitSupplyLines() []*SupplyLine {
 	return supplyLines
 }
 
-func (s *SupplyLine) OpcuaVars() []opcuaVariable {
+func (s *SupplyLine) CommandOpcuaVars() []opcuaVariable {
 	return []opcuaVariable{
-		&s.TxId,
-		&s.PieceKind,
+		&s.command.TxId,
+		&s.command.PieceKind,
+	}
+}
+
+func (s *SupplyLine) StateOpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&s.state.TxAckId,
 	}
 }
 
 func (s *SupplyLine) NewShipment(pieceKind int16) {
-	s.TxId.Value++
-	s.PieceKind.Value = pieceKind
+	s.command.TxId.Value++
+	s.command.PieceKind.Value = pieceKind
+}
+
+func (s *SupplyLine) LastCommandTxId() int16 {
+	return s.command.TxId.Value
+}
+
+func (s *SupplyLine) UpdateState(response *ua.ReadResponse) {
+	utils.Assert(response != nil, "Response is nil")
+	utils.Assert(len(response.Results) == 1, "Supply line state response has wrong number of results")
+	utils.Assert(response.Results[0].Value.Type() == ua.TypeIDInt16, "Supply line state response has wrong type")
+	s.oldState.TxAckId.Value = s.state.TxAckId.Value // save old state before updating
+	s.state.TxAckId.Value = response.Results[0].Value.Value().(int16)
+}
+
+func (s *SupplyLine) PieceAcked() bool {
+	return s.state.TxAckId.Value == s.command.TxId.Value &&
+		s.state.TxAckId.Value != s.oldState.TxAckId.Value
 }
 
 type Warehouse struct {
 	Quantity OpcuaInt16
 }
-
-// Unused warehouse fields
-// QuantityP1 OpcuaInt16
-// QuantityP2 OpcuaInt16
-// QuantityP3 OpcuaInt16
-// QuantityP4 OpcuaInt16
-// QuantityP5 OpcuaInt16
-// QuantityP6 OpcuaInt16
-// QuantityP7 OpcuaInt16
-// QuantityP8 OpcuaInt16
-// QuantityP9 OpcuaInt16
 
 func InitWarehouses() []*Warehouse {
 	warehouses := make([]*Warehouse, NUMBER_OF_WAREHOUSES)
@@ -208,15 +244,13 @@ func (w *Warehouse) OpcuaVars() []opcuaVariable {
 	}
 }
 
-
 type FactoryOutput struct {
-	TxId    OpcuaInt16
+	TxId  OpcuaInt16
 	Np    OpcuaInt16
 	Piece OpcuaInt16
 }
 
 func InitOutputs() []*FactoryOutput {
-
 	outputs := make([]*FactoryOutput, NUMBER_OF_OUTPUTS)
 
 	for i := range NUMBER_OF_OUTPUTS {
@@ -248,32 +282,3 @@ func (fo *FactoryOutput) OpcuaVars() []opcuaVariable {
 		&fo.Piece,
 	}
 }
-
-type FactoryIn struct {
-	TxId OpcuaInt16
-}
-
-func InitFactoryIn() []*FactoryIn {
-	
-	inputs := make([]*FactoryIn, NUMBER_OF_SUPPLY_LINES)
-
-	for i := range NUMBER_OF_SUPPLY_LINES {
-		nodeIDPrefix := NODE_ID_IDX_SUPPLY_LINE + strconv.Itoa(i+1)
-
-		inputs[i] = &FactoryIn{
-			TxId: OpcuaInt16{
-				nodeID: nodeIDPrefix,
-				Value:  0,
-			},
-		}
-
-	}
-	return inputs
-}
-
-func (fi *FactoryIn) OpcuaVars() []opcuaVariable {
-	return []opcuaVariable{
-		&fi.TxId,
-	}
-}
-

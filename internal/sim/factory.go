@@ -12,7 +12,7 @@ import (
 // TODO: add delivery lines
 type factory struct {
 	processLines    map[string]*ProcessingLine
-	stateUpdateFunc func(*factory, context.Context) error
+	stateUpdateFunc func(context.Context, *factory) error
 	plcClient       *plc.Client
 	supplyLines     []*plc.SupplyLine
 	warehouses      []*plc.Warehouse
@@ -38,13 +38,23 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 }
 
 // TODO: Update supply line state when missing fields are added
-func factoryStateUpdate(f *factory, ctx context.Context) error {
+func factoryStateUpdate(ctx context.Context, f *factory) error {
 	for _, warehouse := range f.warehouses {
 		func() {
 			readCtx, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
 			_, err := f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading warehouse")
+		}()
+	}
+
+	for _, supplyLine := range f.supplyLines {
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			readResponse, err := f.plcClient.Read(supplyLine.StateOpcuaVars(), readCtx)
+			supplyLine.UpdateState(readResponse)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading supply lines")
 		}()
 	}
 
@@ -82,7 +92,7 @@ func mockFactoryStateUpdate(f *factory, _ context.Context) error {
 }
 
 func InitFactory(
-	stateUpdateFunc func(*factory, context.Context) error,
+	stateUpdateFunc func(context.Context, *factory) error,
 ) *factory {
 	processLines := make(map[string]*ProcessingLine)
 	linePlcs := plc.InitCells()
@@ -218,7 +228,8 @@ func sendToProduction(
 	return sendToLine(line, &piece)
 }
 
-func runFactoryStateUpdateFunc(ctx context.Context) {
+// TODO: rethink this way of handling updates
+func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
@@ -226,11 +237,16 @@ func runFactoryStateUpdateFunc(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	err := factory.stateUpdateFunc(factory, ctx)
+	err := factory.stateUpdateFunc(ctx, factory)
 	utils.Assert(err == nil, "[updateFactoryState] Error updating factory state")
+	for _, supplyLine := range factory.supplyLines {
+		if supplyLine.PieceAcked() {
+			shipAckCh <- supplyLine.LastCommandTxId()
+		}
+	}
 }
 
-func StartFactoryHandler(ctx context.Context) <-chan error {
+func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan error {
 	errCh := make(chan error)
 
 	// Connect to the factory floor plcs
@@ -250,7 +266,7 @@ func StartFactoryHandler(ctx context.Context) <-chan error {
 				return
 
 			default:
-				runFactoryStateUpdateFunc(ctx)
+				runFactoryStateUpdateFunc(ctx, shipAckCh)
 				time.Sleep(3 * time.Second)
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -40,7 +41,6 @@ func (s *ShipmentArrivalForm) Post(ctx context.Context) error {
 *  SHIPMENT HANDLING
 *
  */
-
 type Shipment struct {
 	MaterialKind string `json:"material_type"`
 	ID           int    `json:"shipment_id"`
@@ -76,6 +76,8 @@ func (s *Shipment) arrived() *ShipmentArrivalForm {
 type ShipmentHandler struct {
 	// Send new shipments to this channel
 	ShipCh chan<- []Shipment
+	// ShipmentAckCh chan<- Shipment
+	ShipAckCh chan<- int16
 	// Errors are reported on this channel
 	ErrCh <-chan error
 }
@@ -85,6 +87,7 @@ func StartShipmentHandler(
 	pieceWakeUp chan<- struct{},
 ) *ShipmentHandler {
 	shipCh := make(chan []Shipment)
+	shipAckCh := make(chan int16)
 	errCh := make(chan error)
 
 	go func() {
@@ -113,6 +116,8 @@ func StartShipmentHandler(
 					nArrived := 0
 					for nArrived < shipment.NPieces {
 						// NOTE: Running in a func to defer the mutex unlock
+						ackWg := sync.WaitGroup{}
+						var expectedAcks []int16
 						func() {
 							factory, mutex := getFactoryInstance()
 							defer mutex.Unlock()
@@ -121,21 +126,43 @@ func StartShipmentHandler(
 							defer cancel()
 
 							for i := 0; i < len(factory.supplyLines); i++ {
+								ackWg.Add(1)
+
 								if nArrived >= shipment.NPieces {
 									break
 								}
-
 								material := PieceStrToInt(shipment.MaterialKind)
 								factory.supplyLines[i].NewShipment(material)
-								_, err := factory.plcClient.Write(factory.supplyLines[i].OpcuaVars(), writeCtx)
+								_, err := factory.plcClient.Write(
+									factory.supplyLines[i].CommandOpcuaVars(),
+									writeCtx,
+								)
 								utils.Assert(err == nil, "[ShipmentHandler] Error writing to supply line")
+								expectedAcks = append(expectedAcks, factory.supplyLines[i].LastCommandTxId())
 								nArrived++
 							}
 						}()
 
-						// TODO: replace this with actual PLC communication meanwhile,
-						// 10 seconds should be enough for the PLCs to process the shipment
-						time.Sleep(10 * time.Second)
+						utils.Assert(len(expectedAcks) > 0, "[ShipmentHandler] No supply lines to write to")
+						// NOTE: Wait all expected shipments to arrive (be acked)
+						ackWg.Add(len(expectedAcks))
+						go func() {
+							for len(expectedAcks) > 0 {
+								acked := <-shipAckCh
+								ackedIdx := -1
+								for i, ack := range expectedAcks {
+									if ack == acked {
+										ackedIdx = i
+										break
+									}
+								}
+								utils.Assert(ackedIdx != -1, "[ShipmentHandler] Unexpected ack")
+								expectedAcks = append(expectedAcks[:ackedIdx], expectedAcks[ackedIdx+1:]...)
+								ackWg.Done()
+							}
+						}()
+
+						ackWg.Wait()
 					}
 
 					// 2 - Communicate the arrival of each shipment to the ERP
@@ -154,7 +181,8 @@ func StartShipmentHandler(
 	}()
 
 	return &ShipmentHandler{
-		ShipCh: shipCh,
-		ErrCh:  errCh,
+		ShipCh:    shipCh,
+		ShipAckCh: shipAckCh,
+		ErrCh:     errCh,
 	}
 }
