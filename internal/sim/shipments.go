@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"mes/internal/net/erp"
+	plc "mes/internal/net/plc"
 	"mes/internal/utils"
 	"net/http"
 	"net/url"
@@ -84,15 +85,15 @@ type ShipmentHandler struct {
 
 func StartShipmentHandler(
 	ctx context.Context,
-	pieceWakeUp chan<- struct{},
+	pieceWakeUpCh chan<- struct{},
 ) *ShipmentHandler {
 	shipCh := make(chan []Shipment)
-	shipAckCh := make(chan int16)
+	shipAckCh := make(chan int16, plc.NUMBER_OF_SUPPLY_LINES+1)
 	errCh := make(chan error)
 
 	go func() {
-		defer close(shipCh)
 		defer close(errCh)
+		defer close(pieceWakeUpCh)
 
 		for {
 			select {
@@ -174,7 +175,7 @@ func StartShipmentHandler(
 						)
 					}
 
-					pieceWakeUp <- struct{}{}
+					pieceWakeUpCh <- struct{}{}
 				}
 			}
 		}

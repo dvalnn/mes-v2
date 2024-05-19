@@ -260,6 +260,9 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 
 	// Start the factory floor
 	go func() {
+		defer close(errCh)
+		defer close(shipAckCh)
+
 		for {
 			select {
 			case <-ctx.Done():

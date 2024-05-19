@@ -20,6 +20,9 @@ func Run(ctx context.Context, simTime time.Duration) {
 	shipmentHandler := sim.StartShipmentHandler(ctx, pieceHandler.WakeUpCh)
 	factoryErrorCh := sim.StartFactoryHandler(ctx, shipmentHandler.ShipAckCh)
 
+	defer close(shipmentHandler.ShipCh)
+	defer close(deliveryHandler.DeliveryCh)
+
 	for {
 		select {
 		case <-ctx.Done():
