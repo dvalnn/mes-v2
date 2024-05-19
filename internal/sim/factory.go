@@ -157,6 +157,7 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		if form := line.createBestForm(piece, 0); form != nil {
 			score := form.metadataScore()
 			lineOffers[line.id] = score
+			log.Printf("Line: %s\tCandidature: %v\tScore:%d\n", line.id, form, score)
 		}
 	}
 
@@ -167,10 +168,12 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		}
 	}
 
+	log.Printf("Best score: %d\n", bestScore)
 	leniency := 0.1 // 10% leniency
 	for lineId, score := range lineOffers {
 		if (1-leniency)*float64(score) <= float64(bestScore) {
 			factory.processLines[lineId].registerWaitingPiece(waiter)
+			log.Printf("Registered piece %s to line %s with score %d\n", piece.ErpIdentifier, lineId, score)
 			nRegistered++
 		}
 	}
