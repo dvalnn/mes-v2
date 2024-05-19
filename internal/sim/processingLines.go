@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"log"
 	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"sync"
@@ -328,17 +327,11 @@ func (pl *ProcessingLine) UpdateConveyor() {
 		reportedOutPieceId := pl.plc.OutPieceTxId()
 		iterations := LINE_CONVEYOR_SIZE
 		for {
-			log.Printf(
-				"Progressing line %s, with conveyor state %v\tlooking for piece %d\n",
-				pl.id, pl.conveyorLine, reportedOutPieceId,
-			)
 			outPieceId := pl.progressConveyor()
-			log.Printf("Progressed conveyor to %v\toutPiece is %d\n", pl.conveyorLine, outPieceId)
 			if outPieceId == reportedOutPieceId {
 				break
 			}
 			iterations--
-
 			u.AssertMultiple(
 				"[ProcessingLine.ProgressInternalState]",
 				[]u.Assertion{
@@ -355,12 +348,10 @@ func (pl *ProcessingLine) UpdateConveyor() {
 	}
 
 	if pl.plc.PieceEnteredM1() {
-		log.Printf("New piece ackd on line %s\n", pl.id)
 		// This is here to handle cases where the command has been acked by the PLC
 		// but no pieces have left the conveyor yet. In this case, the conveyor should
 		// progress but there should not be an outPieceId to report
 		if pl.conveyorLine[1].item != nil {
-			log.Printf("Progressing conveyor on line %s (triggered by new piece)\n", pl.id)
 			// There should not be an out piece here, as it would have been caught by
 			// the previous progress loop in the pl.plc.PieceLeft() block
 			outItem := pl.progressConveyor()
@@ -368,7 +359,6 @@ func (pl *ProcessingLine) UpdateConveyor() {
 				outItem == pl.lastLeftPieceId,
 				"[ProcessingLine.ProgressInternalState] Invalid conveyor state",
 			)
-			log.Printf("Conveyor progressed to %v\n", pl.conveyorLine)
 		}
 		pl.ProgressNewPiece()
 	}
