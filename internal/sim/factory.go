@@ -167,7 +167,6 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		}
 	}
 
-	log.Printf("Best score: %d\n", bestScore)
 	leniency := 0.2 // 10% leniency
 	for lineId, score := range lineOffers {
 		if (1-leniency)*float64(score) <= float64(bestScore) {
