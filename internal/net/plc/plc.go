@@ -250,7 +250,7 @@ type DeliveryLine struct {
 	Piece OpcuaInt16
 }
 
-func InitOutputs() []*DeliveryLine {
+func InitDeliveryLines() []*DeliveryLine {
 	outputs := make([]*DeliveryLine, NUMBER_OF_OUTPUTS)
 
 	for i := range NUMBER_OF_OUTPUTS {

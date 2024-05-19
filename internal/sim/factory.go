@@ -131,6 +131,7 @@ func InitFactory(
 		stateUpdateFunc: factoryStateUpdate,
 		plcClient:       plc.NewClient(plc.OPCUA_ENDPOINT),
 		supplyLines:     plc.InitSupplyLines(),
+		deliveryLines:   plc.InitDeliveryLines(),
 		warehouses:      plc.InitWarehouses(),
 	}
 }
