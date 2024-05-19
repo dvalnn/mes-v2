@@ -146,8 +146,7 @@ func StartShipmentHandler(
 
 						utils.Assert(len(expectedAcks) > 0, "[ShipmentHandler] No supply lines to write to")
 						// NOTE: Wait all expected shipments to arrive (be acked)
-						ackWg.Add(len(expectedAcks))
-						go func() {
+						func() {
 							for len(expectedAcks) > 0 {
 								acked := <-shipAckCh
 								ackedIdx := -1
@@ -159,11 +158,8 @@ func StartShipmentHandler(
 								}
 								utils.Assert(ackedIdx != -1, "[ShipmentHandler] Unexpected ack")
 								expectedAcks = append(expectedAcks[:ackedIdx], expectedAcks[ackedIdx+1:]...)
-								ackWg.Done()
 							}
 						}()
-
-						ackWg.Wait()
 					}
 
 					// 2 - Communicate the arrival of each shipment to the ERP
