@@ -15,6 +15,7 @@ type factory struct {
 	stateUpdateFunc func(context.Context, *factory) error
 	plcClient       *plc.Client
 	supplyLines     []*plc.SupplyLine
+	deliveryLines   []*plc.DeliveryLine
 	warehouses      []*plc.Warehouse
 }
 

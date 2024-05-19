@@ -244,19 +244,19 @@ func (w *Warehouse) OpcuaVars() []opcuaVariable {
 	}
 }
 
-type FactoryOutput struct {
+type DeliveryLine struct {
 	TxId  OpcuaInt16
 	Np    OpcuaInt16
 	Piece OpcuaInt16
 }
 
-func InitOutputs() []*FactoryOutput {
-	outputs := make([]*FactoryOutput, NUMBER_OF_OUTPUTS)
+func InitOutputs() []*DeliveryLine {
+	outputs := make([]*DeliveryLine, NUMBER_OF_OUTPUTS)
 
 	for i := range NUMBER_OF_OUTPUTS {
 		nodeIDPrefix := NODE_ID_OUTPUTS + strconv.Itoa(i+1)
 
-		outputs[i] = &FactoryOutput{
+		outputs[i] = &DeliveryLine{
 			TxId: OpcuaInt16{
 				nodeID: nodeIDPrefix + OUTPUT_ID_POSTFIX,
 				Value:  0,
@@ -275,10 +275,16 @@ func InitOutputs() []*FactoryOutput {
 	return outputs
 }
 
-func (fo *FactoryOutput) OpcuaVars() []opcuaVariable {
+func (fo *DeliveryLine) OpcuaVars() []opcuaVariable {
 	return []opcuaVariable{
 		&fo.TxId,
 		&fo.Np,
 		&fo.Piece,
 	}
+}
+
+func (dl *DeliveryLine) SetDelivery(quantity int16, pieceKind int16) {
+	dl.TxId.Value++
+	dl.Np.Value = quantity
+	dl.Piece.Value = pieceKind
 }
