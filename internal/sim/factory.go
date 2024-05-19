@@ -196,6 +196,10 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 
 	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
 	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
+
+	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolTop)
+	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolBot)
+
 	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
 	writeResponse, err := factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
 

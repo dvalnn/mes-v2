@@ -245,6 +245,23 @@ func (pl *ProcessingLine) currentTool(mIndex int) string {
 	return m.selectedTool
 }
 
+func (pl *ProcessingLine) setCurrentTool(mIndex int, tool string) {
+	// Line 0 has no machines
+	if pl.id == u.ID_L0 {
+		return
+	}
+
+	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.currentTool] machine is null")
+	for _, t := range m.tools {
+		if t == tool {
+			m.selectedTool = tool
+			return
+		}
+	}
+	panic("[ProcessingLine.setCurrentTool] Tool not found in machine")
+}
+
 func (pl *ProcessingLine) getNItemsInConveyor() int {
 	nItemsInQueue := 0
 	for _, conveyor := range pl.conveyorLine {
@@ -282,11 +299,13 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 
 		return &processControlForm{
 			toolTop:    pl.currentTool(LINE_DEFAULT_M1_POS),
-			toolBot:    currentStep.Tool,
-			pieceKind:  piece.Kind,
-			id:         id,
 			processTop: false,
+
+			toolBot:    currentStep.Tool,
 			processBot: true,
+
+			pieceKind: piece.Kind,
+			id:        id,
 
 			// Metadata
 			stepsCompleted: 1,
@@ -295,20 +314,19 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		}
 	}
 
-	chainSteps := false
-
 	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M1_POS) {
 		intrinsicTime += MACHINE_TOOL_SWAP_TIME
 	}
 
+	chainSteps := false
 	toolBot := pl.currentTool(LINE_DEFAULT_M2_POS)
 	if piece.CurrentStep+1 < len(piece.Steps) {
 		nextStep := piece.Steps[piece.CurrentStep+1]
-		toolBot = nextStep.Tool
-		chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
 
-		if chainSteps {
+		if pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep) {
+			chainSteps = true
 			stepsCompleted++
+			toolBot = nextStep.Tool
 			intrinsicTime += nextStep.Time
 		}
 	}
@@ -319,11 +337,13 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 
 	return &processControlForm{
 		toolTop:    currentStep.Tool,
-		toolBot:    toolBot,
-		pieceKind:  piece.Kind,
-		id:         id,
 		processTop: true,
+
+		toolBot:    toolBot,
 		processBot: chainSteps,
+
+		pieceKind: piece.Kind,
+		id:        id,
 
 		// Metadata
 		stepsCompleted: stepsCompleted,
