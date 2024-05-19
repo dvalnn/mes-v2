@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	mes "mes/internal"
+	
+	sim "mes/internal/sim"
+	net_erp "mes/internal/net/erp"
 )
 
 func TestGetShipmentArrivals(t *testing.T) {
@@ -32,8 +33,8 @@ func TestGetShipmentArrivals(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	ctx := getHttpTestContext(server.URL, mes.DEFAULT_HTTP_TIMEOUT)
-	shipments, err := mes.GetShipments(ctx, 1)
+	ctx := getHttpTestContext(server.URL, net_erp.DEFAULT_HTTP_TIMEOUT)
+	shipments, err := sim.GetShipments(ctx, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestGetShipmentArrivals(t *testing.T) {
 		t.Fatalf("expected 2 shipments, got %d", len(shipments))
 	}
 
-	expected := []mes.Shipment{
+	expected := []sim.Shipment{
 		{MaterialKind: "P1", ID: 1, NPieces: 10},
 		{MaterialKind: "P2", ID: 2, NPieces: 20},
 	}
@@ -91,8 +92,8 @@ func TestGetProduction(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	ctx := getHttpTestContext(server.URL, mes.DEFAULT_HTTP_TIMEOUT)
-	recipes, err := mes.GetPieces(ctx, 2)
+	ctx := getHttpTestContext(server.URL, net_erp.DEFAULT_HTTP_TIMEOUT)
+	recipes, err := sim.GetPieces(ctx, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,9 +102,9 @@ func TestGetProduction(t *testing.T) {
 		t.Fatalf("expected 2 recipes, got %d", len(recipes))
 	}
 
-	expected := []mes.Piece{
+	expected := []sim.Piece{
 		{
-			Steps: []mes.Transformation{
+			Steps: []sim.Transformation{
 				{
 					MaterialID:   "mat01",
 					ProductID:    "mat02",
@@ -116,7 +117,7 @@ func TestGetProduction(t *testing.T) {
 			},
 		},
 		{
-			Steps: []mes.Transformation{
+			Steps: []sim.Transformation{
 				{
 					MaterialID:   "string",
 					ProductID:    "string",

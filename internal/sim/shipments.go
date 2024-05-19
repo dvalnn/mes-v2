@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"mes/internal/net/erp"
+	plc "mes/internal/net/plc"
+	"mes/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,7 +41,6 @@ func (s *ShipmentArrivalForm) Post(ctx context.Context) error {
 *  SHIPMENT HANDLING
 *
  */
-
 type Shipment struct {
 	MaterialKind string `json:"material_type"`
 	ID           int    `json:"shipment_id"`
@@ -75,20 +76,23 @@ func (s *Shipment) arrived() *ShipmentArrivalForm {
 type ShipmentHandler struct {
 	// Send new shipments to this channel
 	ShipCh chan<- []Shipment
+	// ShipmentAckCh chan<- Shipment
+	ShipAckCh chan<- int16
 	// Errors are reported on this channel
 	ErrCh <-chan error
 }
 
 func StartShipmentHandler(
 	ctx context.Context,
-	pieceWakeUp chan<- struct{},
+	pieceWakeUpCh chan<- struct{},
 ) *ShipmentHandler {
 	shipCh := make(chan []Shipment)
+	shipAckCh := make(chan int16, plc.NUMBER_OF_SUPPLY_LINES+1)
 	errCh := make(chan error)
 
 	go func() {
-		defer close(shipCh)
 		defer close(errCh)
+		defer close(pieceWakeUpCh)
 
 		for {
 			select {
@@ -104,21 +108,56 @@ func StartShipmentHandler(
 						shipment.MaterialKind,
 					)
 
-					// TODO: 1 - Communicate new shipments to the PLCs
+					// 1 - Communicate new shipments to the PLCs
 					log.Printf(
 						"[ShipmentHandler] Communicating shipment %d to PLCs",
 						shipment.ID,
 					)
-					time.Sleep(time.Second)
+					nArrived := 0
+					for nArrived < shipment.NPieces {
+						// NOTE: Running in a func to defer the mutex unlock
+						var expectedAcks []int16
+						func() {
+							factory, mutex := getFactoryInstance()
+							defer mutex.Unlock()
 
-					// TODO: 2 - Wait for each shipment arrival to be confirmed
-					log.Printf(
-						"[ShipmentHandler] Waiting for shipment %d to arrive",
-						shipment.ID,
-					)
-					time.Sleep(time.Second)
+							writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+							defer cancel()
 
-					// 3 - Communicate the arrival of each shipment to the ERP
+							for i := 0; i < len(factory.supplyLines); i++ {
+								if nArrived >= shipment.NPieces {
+									break
+								}
+								material := PieceStrToInt(shipment.MaterialKind)
+								factory.supplyLines[i].NewShipment(material)
+								_, err := factory.plcClient.Write(
+									factory.supplyLines[i].CommandOpcuaVars(),
+									writeCtx,
+								)
+								utils.Assert(err == nil, "[ShipmentHandler] Error writing to supply line")
+								expectedAcks = append(expectedAcks, factory.supplyLines[i].LastCommandTxId())
+								nArrived++
+							}
+						}()
+
+						utils.Assert(len(expectedAcks) > 0, "[ShipmentHandler] No supply lines to write to")
+
+						// NOTE: Wait all expected shipments to arrive (be acked)
+						for len(expectedAcks) > 0 {
+							acked := <-shipAckCh
+							ackedIdx := -1
+							for i, ack := range expectedAcks {
+								if ack == acked {
+									ackedIdx = i
+									break
+								}
+							}
+							utils.Assert(ackedIdx != -1, "[ShipmentHandler] Unexpected ack")
+							expectedAcks = append(expectedAcks[:ackedIdx], expectedAcks[ackedIdx+1:]...)
+						}
+					}
+
+					// 2 - Communicate the arrival of each shipment to the ERP
 					log.Printf("[ShipmentHandler] Shipment %d arrived", shipment.ID)
 					if err := shipment.arrived().Post(ctx); err != nil {
 						errCh <- fmt.Errorf(
@@ -127,14 +166,15 @@ func StartShipmentHandler(
 						)
 					}
 
-					pieceWakeUp <- struct{}{}
+					pieceWakeUpCh <- struct{}{}
 				}
 			}
 		}
 	}()
 
 	return &ShipmentHandler{
-		ShipCh: shipCh,
-		ErrCh:  errCh,
+		ShipCh:    shipCh,
+		ShipAckCh: shipAckCh,
+		ErrCh:     errCh,
 	}
 }

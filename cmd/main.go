@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	simTime := 1 * time.Second
+	simTime := 1 * time.Minute
 	mes.Run(context.Background(), simTime)
 }

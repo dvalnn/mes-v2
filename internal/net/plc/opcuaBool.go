@@ -8,13 +8,13 @@ import (
 
 type OpcuaBool struct {
 	nodeID string
-	value  bool
+	Value  bool
 }
 
 func NewOpcuaBool(nodeID string, value bool) OpcuaBool {
 	return OpcuaBool{
 		nodeID: nodeID,
-		value:  value,
+		Value:  value,
 	}
 }
 
@@ -35,7 +35,7 @@ func (b OpcuaBool) asWriteValue() (*ua.WriteValue, error) {
 		return nil, fmt.Errorf("[opcuaInt16.asReadValue] error parsing nodeID: %s", err)
 	}
 
-	value, err := ua.NewVariant(b.value)
+	value, err := ua.NewVariant(b.Value)
 	if err != nil {
 		return nil, fmt.Errorf("[opcuaInt16.asWriteValue] error creating variant: %s", err)
 	}

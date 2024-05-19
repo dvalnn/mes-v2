@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"mes/internal/net/erp"
+	"mes/internal/net/plc"
 	u "mes/internal/utils"
 	"net/http"
 	"net/url"
@@ -66,6 +68,7 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 				return
 
 			case deliveries := <-deliveryCh:
+				linesRemaining := plc.NUMBER_OF_OUTPUTS
 				for _, delivery := range deliveries {
 					log.Printf(
 						"[DeliveryHandler] New delivery (id %v): %d pieces of type %v",
@@ -73,23 +76,34 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 						delivery.Quantity,
 						delivery.Piece,
 					)
+					u.Assert(linesRemaining >= 0, "[DeliveryHandler] Not enough delivery lines available")
 
-					// TODO: 1 - Communicate new deliveries to the PLCs
-					log.Printf(
-						"[DeliveryHandler] Communicating delivery %v to PLCs",
-						delivery.ID,
-					)
-					time.Sleep(500 * time.Millisecond)
+					neededLines := int(math.Ceil(float64(delivery.Quantity) / DELIVERY_LINE_CAPACITY))
+					linesRemaining -= neededLines
 
-					// TODO: 2 - Wait for each delivery to be confirmed
-					log.Printf(
-						"[DeliveryHandler] Delivering %d %v pieces",
-						delivery.Quantity,
-						delivery.Piece,
-					)
-					time.Sleep(500 * time.Millisecond)
+					func() {
+						piecesRemaining := delivery.Quantity
+						factory, mutex := getFactoryInstance()
+						defer mutex.Unlock()
 
-					// TODO: 3 - Confirm the delivery to the ERP
+						writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+						defer cancel()
+
+						for i := range neededLines {
+							dl := factory.deliveryLines[i]
+							quantity := piecesRemaining
+							if quantity > DELIVERY_LINE_CAPACITY {
+								quantity = DELIVERY_LINE_CAPACITY
+							}
+							piecesRemaining -= quantity
+							dl.SetDelivery(int16(quantity), PieceStrToInt(delivery.Piece))
+							_, err := factory.plcClient.Write(dl.OpcuaVars(), writeCtx)
+							u.Assert(err == nil, "[DeliveryHandler] Error writing to delivery line")
+						}
+						u.Assert(piecesRemaining == 0, "[DeliveryHandler] Wrong number of pieces delivered")
+					}()
+
+					// 3 - Confirm the delivery to the ERP
 					err := delivery.PostConfirmation(ctx, delivery.ID)
 					u.Assert(err == nil, "[DeliveryHandler] Error confirming delivery")
 				}

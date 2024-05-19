@@ -15,10 +15,13 @@ func Run(ctx context.Context, simTime time.Duration) {
 	defer cancel()
 
 	dateCh := sim.DateCounter(ctx, simTime)
-	factoryErrorCh := sim.StartFactoryHandler(ctx)
 	deliveryHandler := sim.StartDeliveryHandler(ctx)
 	pieceHandler := sim.StartPieceHandler(ctx)
 	shipmentHandler := sim.StartShipmentHandler(ctx, pieceHandler.WakeUpCh)
+	factoryErrorCh := sim.StartFactoryHandler(ctx, shipmentHandler.ShipAckCh)
+
+	defer close(shipmentHandler.ShipCh)
+	defer close(deliveryHandler.DeliveryCh)
 
 	for {
 		select {

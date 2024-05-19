@@ -2,6 +2,7 @@ package sim
 
 import (
 	"context"
+	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestCreateBestFormForOnlyM1(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_1}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM1)
+	best := pLine.createBestForm(&minimalPieceForM1, 0)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_1,
 		toolBot:    u.TOOL_1,
@@ -47,7 +48,7 @@ func TestCreateBestFormForOnlyM2(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_4}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM2)
+	best := pLine.createBestForm(&minimalPieceForM2, 0)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_4,
 		toolBot:    u.TOOL_4,
@@ -74,7 +75,7 @@ func TestCreateBestFormWithChain(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_1}, {Tool: u.TOOL_4}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForChain)
+	best := pLine.createBestForm(&minimalPieceForChain, 0)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_1,
 		toolBot:    u.TOOL_4,
@@ -101,7 +102,7 @@ func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_4}, {Tool: u.TOOL_1}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM2WithExtra)
+	best := pLine.createBestForm(&minimalPieceForM2WithExtra, 0)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_4,
 		toolBot:    u.TOOL_4,
@@ -187,7 +188,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 	}
 
 	pLine.addItem(conveyorItem)
-	go pLine.progressItems()
+	go pLine.progressConveyor()
 	receiveOnChannel(lineEntryCh)
 	if pLine.conveyorLine[0].item != nil || pLine.conveyorLine[1].item != conveyorItem {
 		t.Fatalf("Expected conveyorItem to be moved to next conveyor slot, but it was not")
@@ -197,7 +198,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 	}
 	t.Log("Item progressed to second position as expected")
 
-	go pLine.progressItems()
+	go pLine.progressConveyor()
 	receiveOnChannel(transformCh)
 	if pLine.conveyorLine[1].item != nil || pLine.conveyorLine[2].item != conveyorItem {
 		t.Fatalf("Expected conveyorItem to be moved to next conveyor slot, but it was not")
@@ -207,7 +208,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 	}
 	t.Log("Item progressed to third position as expected")
 
-	pLine.progressItems()
+	pLine.progressConveyor()
 	if pLine.conveyorLine[2].item != nil || pLine.conveyorLine[3].item != conveyorItem {
 		t.Fatalf("Expected conveyorItem to be moved to next conveyor slot, but it was not")
 	}
@@ -216,7 +217,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 	}
 	t.Log("Item progressed to fourth position as expected")
 
-	go pLine.progressItems()
+	go pLine.progressConveyor()
 	receiveOnChannel(transformCh)
 	if pLine.conveyorLine[3].item != nil || pLine.conveyorLine[4].item != conveyorItem {
 		t.Fatalf("Expected conveyorItem to be moved to next conveyor slot, but it was not")
@@ -226,7 +227,7 @@ func TestProgressItemsSingleItem(t *testing.T) {
 	}
 	t.Log("Item progressed to fifth position as expected")
 
-	go pLine.progressItems()
+	go pLine.progressConveyor()
 	receiveOnChannel(lineExitCh)
 	if pLine.conveyorLine[4].item != nil {
 		t.Fatalf("Expected conveyorItem to be moved to next conveyor slot, but it was not")
@@ -288,7 +289,7 @@ func TestProgressItemsFullLine(t *testing.T) {
 		}
 	}
 
-	go pLine.progressItems()
+	go pLine.progressConveyor()
 	receiveOnChannel(lineEntryCh)
 	t.Log("Entry channel triggered as expected")
 	receiveOnChannel(transformChM1)
@@ -323,5 +324,31 @@ func TestPruneDeadWaiters(t *testing.T) {
 	pLine.pruneDeadWaiters()
 	if len(pLine.waitingPieces) != 1 {
 		t.Fatalf("Expected 1 waiter to be alive, got %d", len(pLine.waitingPieces))
+	}
+}
+
+func TestTransformCellCommand(t *testing.T) {
+	// creates a dummy process control form
+	pcf := &processControlForm{
+		toolTop:    u.TOOL_1,
+		toolBot:    u.TOOL_1,
+		pieceKind:  u.P_KIND_1,
+		processTop: true,
+		processBot: false,
+		id:         1,
+	}
+
+	result := pcf.toCellCommand()
+	expected := &plc.CellCommand{
+		TxId:       plc.OpcuaInt16{Value: 1},
+		PieceKind:  plc.OpcuaInt16{Value: 1},
+		ProcessBot: plc.OpcuaBool{Value: false},
+		ProcessTop: plc.OpcuaBool{Value: true},
+		ToolBot:    plc.OpcuaInt16{Value: 1},
+		ToolTop:    plc.OpcuaInt16{Value: 1},
+	}
+
+	if *result != *expected {
+		t.Fatalf("Expected %+v, got %+v", expected, result)
 	}
 }

@@ -3,18 +3,26 @@ package sim
 import (
 	"context"
 	"log"
-	u "mes/internal/utils"
+	plc "mes/internal/net/plc"
+	"mes/internal/utils"
 	"sync"
 	"time"
 )
+
+// TODO: add delivery lines
+type factory struct {
+	processLines    map[string]*ProcessingLine
+	stateUpdateFunc func(context.Context, *factory) error
+	plcClient       *plc.Client
+	supplyLines     []*plc.SupplyLine
+	deliveryLines   []*plc.DeliveryLine
+	warehouses      []*plc.Warehouse
+}
 
 var (
 	factoryInstance *factory
 	factoryMutex    = &sync.Mutex{}
 	factoryOnce     sync.Once
-
-	controlID      int16
-	controlIDMutex = &sync.Mutex{}
 )
 
 func getFactoryInstance() (*factory, *sync.Mutex) {
@@ -22,7 +30,7 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 
 	if factoryInstance == nil {
 		factoryOnce.Do(func() {
-			factoryInstance = InitFactory()
+			factoryInstance = InitFactory(factoryStateUpdate)
 			log.Printf("[getFactoryInstance] Factory instance created")
 		})
 	}
@@ -30,25 +38,77 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 	return factoryInstance, factoryMutex
 }
 
-type factory struct {
-	processLines    map[string]*ProcessingLine
-	stateUpdateFunc func(*factory) error
-	supplyLines     []SupplyLine
-	deliveryLines   []DeliveryLine
+// TODO: Update supply line state when missing fields are added
+func factoryStateUpdate(ctx context.Context, f *factory) error {
+	for _, warehouse := range f.warehouses {
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			_, err := f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading warehouse")
+		}()
+	}
+
+	for _, supplyLine := range f.supplyLines {
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			readResponse, err := f.plcClient.Read(supplyLine.StateOpcuaVars(), readCtx)
+			supplyLine.UpdateState(readResponse)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading supply lines")
+		}()
+	}
+
+	for _, line := range f.processLines {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			readResponse, err := f.plcClient.Read(line.plc.StateOpcuaVars(), readCtx)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading line state")
+			line.plc.UpdateState(readResponse)
+		}()
+
+		line.UpdateConveyor()
+	}
+
+	return nil
 }
 
-func InitFactory() *factory {
-	processLines := make(map[string]*ProcessingLine)
+func mockFactoryStateUpdate(f *factory, _ context.Context) error {
+	for _, line := range f.processLines {
+		if line.readyForNext {
+			line.claimWaitingPiece()
+		}
+		line.ProgressNewPiece()
+		line.progressConveyor()
+	}
 
-	processLines[u.ID_L0] = &ProcessingLine{
-		id:            u.ID_L0,
-		conveyorLine:  make([]Conveyor, u.LINE_CONVEYOR_SIZE),
+	return nil
+}
+
+func InitFactory(
+	stateUpdateFunc func(context.Context, *factory) error,
+) *factory {
+	processLines := make(map[string]*ProcessingLine)
+	linePlcs := plc.InitCells()
+
+	processLines[utils.ID_L0] = &ProcessingLine{
+		plc:           linePlcs[0],
+		id:            utils.ID_L0,
+		conveyorLine:  make([]Conveyor, LINE_CONVEYOR_SIZE),
 		waitingPieces: []*freeLineWaiter{},
 		readyForNext:  true,
 	}
 
-	for _, lineId := range []string{u.ID_L1, u.ID_L2, u.ID_L3, u.ID_L4, u.ID_L5, u.ID_L6} {
+	for idx, lineId := range []string{utils.ID_L1, utils.ID_L2, utils.ID_L3} {
 		processLines[lineId] = &ProcessingLine{
+			plc:           linePlcs[idx+1],
 			id:            lineId,
 			conveyorLine:  initType1Conveyor(),
 			waitingPieces: []*freeLineWaiter{},
@@ -56,56 +116,50 @@ func InitFactory() *factory {
 		}
 	}
 
-	// TODO: Implement the stateUpdateFunc using OPCUA to communicate with the PLCs
-	stateUpdateFunc := func(f *factory) error {
-		for _, line := range f.processLines {
-			if line.isReady() {
-				line.claimWaitingPiece()
-			}
-			line.progressItems()
+	for idx, lineId := range []string{utils.ID_L4, utils.ID_L5, utils.ID_L6} {
+		processLines[lineId] = &ProcessingLine{
+			plc:           linePlcs[idx+4],
+			id:            lineId,
+			conveyorLine:  initType2Conveyor(),
+			waitingPieces: []*freeLineWaiter{},
+			readyForNext:  true,
 		}
-		return nil
 	}
 
 	return &factory{
 		processLines:    processLines,
-		supplyLines:     []SupplyLine{},
-		deliveryLines:   []DeliveryLine{},
-		stateUpdateFunc: stateUpdateFunc,
+		stateUpdateFunc: factoryStateUpdate,
+		plcClient:       plc.NewClient(plc.OPCUA_ENDPOINT),
+		supplyLines:     plc.InitSupplyLines(),
+		deliveryLines:   plc.InitDeliveryLines(),
+		warehouses:      plc.InitWarehouses(),
 	}
-}
-
-func getNextControlID() int16 {
-	controlIDMutex.Lock()
-	defer controlIDMutex.Unlock()
-
-	controlID += 1
-	return controlID
 }
 
 func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
-	if piece.Location == u.ID_W2 {
-		line := factory.processLines[u.ID_L0]
+	if piece.Location == utils.ID_W2 {
+		line := factory.processLines[utils.ID_L0]
 		line.registerWaitingPiece(waiter)
 		return
 	}
 
 	nRegistered := 0
 	for _, line := range factory.processLines {
-		if line.id == u.ID_L0 {
+		if line.id == utils.ID_L0 {
 			continue
 		}
 
-		if form := line.createBestForm(piece); form != nil {
+		// The control ID does not matter in this case
+		if form := line.createBestForm(piece, 0); form != nil {
 			line.registerWaitingPiece(waiter)
 			nRegistered++
 		}
 	}
 
-	u.Assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
+	utils.Assert(nRegistered > 0, "[registerWaitingPiece] No lines exist for piece")
 }
 
 func sendToLine(lineID string, piece *Piece) *itemHandler {
@@ -116,11 +170,21 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
-	controlForm := factory.processLines[lineID].createBestForm(piece)
 
-	// TODO: controlForm.SendToPLC()
+	// TODO: tweak the timeout value
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 
-	u.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
+	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
+	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
+	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
+	writeResponse, err := factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
+
+	log.Printf("Control Form: %+v", factory.processLines[lineID].plc.CommandOpcuaVars())
+	log.Printf("Write response: %+v", writeResponse.Results[0])
+
+	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
+	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,
@@ -160,50 +224,55 @@ func sendToProduction(
 	close(claimed)
 	lock.Unlock()
 
-	u.Assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
+	utils.Assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
 	log.Printf("[sendToProduction] Piece %v claimed by line %s", piece.ErpIdentifier, line)
 
 	return sendToLine(line, &piece)
 }
 
-func updateFactoryState() {
+// TODO: rethink this way of handling updates
+func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
-	err := factory.stateUpdateFunc(factory)
-	u.Assert(err == nil, "[updateFactoryState] Error updating factory state")
-}
+	// TODO: tweak the timeout value
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 
-func progressFreeLines() {
-	factory, mutex := getFactoryInstance()
-	defer mutex.Unlock()
-	for _, line := range factory.processLines {
-		if line.isReady() {
-			// TODO: progress the line until the id of the item that leaves
-			// matches the last item left reported by the plc
-			line.progressItems()
+	err := factory.stateUpdateFunc(ctx, factory)
+	utils.Assert(err == nil, "[updateFactoryState] Error updating factory state")
+	for _, supplyLine := range factory.supplyLines {
+		if supplyLine.PieceAcked() {
+			shipAckCh <- supplyLine.LastCommandTxId()
 		}
 	}
 }
 
-func StartFactoryHandler(ctx context.Context) <-chan error {
+func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan error {
 	errCh := make(chan error)
+
 	// Connect to the factory floor plcs
-	time.Sleep(500 * time.Millisecond)
+	func() {
+		factory, mutex := getFactoryInstance()
+		defer mutex.Unlock()
+
+		err := factory.plcClient.Connect(ctx)
+		utils.Assert(err == nil, "[StartFactoryHandler] Error connecting to factory floor")
+	}()
 
 	// Start the factory floor
 	go func() {
+		defer close(errCh)
+		defer close(shipAckCh)
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 
 			default:
-				// 1 - Get a full update of the factory floor
-				time.Sleep(250 * time.Millisecond)
-
-				// 2 - update the line status for any line that progressed
-				updateFactoryState()
+				runFactoryStateUpdateFunc(ctx, shipAckCh)
+				time.Sleep(3 * time.Second)
 			}
 		}
 	}()
