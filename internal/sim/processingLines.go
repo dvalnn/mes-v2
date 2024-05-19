@@ -7,8 +7,9 @@ import (
 )
 
 type Machine struct {
-	name  string
-	tools []string
+	name         string
+	selectedTool string
+	tools        []string
 }
 
 // For the inner logic
@@ -44,13 +45,21 @@ func initType1Conveyor() []Conveyor {
 	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
 	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M1", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
+		item: nil,
+		machine: &Machine{
+			name:         "M1",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_2, u.TOOL_3},
+		},
 	}
 
 	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M2", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
+		item: nil,
+		machine: &Machine{
+			name:         "M2",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_2, u.TOOL_3},
+		},
 	}
 
 	return conveyor
@@ -60,13 +69,21 @@ func initType2Conveyor() []Conveyor {
 	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
 	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M3", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_5}},
+		item: nil,
+		machine: &Machine{
+			name:         "M3",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_4, u.TOOL_5},
+		},
 	}
 
 	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M4", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_6}},
+		item: nil,
+		machine: &Machine{
+			name:         "M4",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_4, u.TOOL_6},
+		},
 	}
 
 	return conveyor
@@ -82,12 +99,31 @@ type ProcessingLine struct {
 }
 
 type processControlForm struct {
+	// Fields to control the plc
 	toolTop    string
 	toolBot    string
 	pieceKind  string
 	id         int16
 	processTop bool
 	processBot bool
+
+	// Metadata for decision making in the MES simulation
+
+	// Number of steps completed for this command (0-based) out of the total
+	// steps in the piece's recipe
+	stepsCompleted int
+	// Time needed to process this command to completion (in seconds)
+	// assuming no delays (e.g. waiting for a machine to be free)
+	intrinsicTime int
+	// Time needed to process this command to completion (in seconds)
+	// taking into account possible delays in queue
+	queueSize int
+}
+
+func (pcf *processControlForm) metadataScore() int {
+	return pcf.intrinsicTime*TIME_WEIGHT +
+		pcf.queueSize*QUEUE_WEIGHT +
+		(2-pcf.stepsCompleted)*STEP_WEIGHT
 }
 
 func ToolStrToInt(s string) int16 {
@@ -146,9 +182,9 @@ func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 }
 
 type freeLineWaiter struct {
-	claimed      <-chan struct{}
-	claimPieceCh chan<- string
-	claimLock    *sync.Mutex
+	pieceClaimedCh <-chan struct{}
+	claimPieceCh   chan<- string
+	claimLock      *sync.Mutex
 }
 
 func (pl *ProcessingLine) registerWaitingPiece(w *freeLineWaiter) {
@@ -159,7 +195,7 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 	aliveWaiters := make([]*freeLineWaiter, 0, len(pl.waitingPieces))
 	for _, w := range pl.waitingPieces {
 		select {
-		case <-w.claimed:
+		case <-w.pieceClaimedCh:
 		default:
 			aliveWaiters = append(aliveWaiters, w)
 		}
@@ -176,14 +212,16 @@ loop:
 	for _, w := range pl.waitingPieces {
 		w.claimLock.Lock()
 		select {
-		case <-w.claimed:
+		case <-w.pieceClaimedCh:
 			w.claimLock.Unlock()
 		default:
 			w.claimPieceCh <- pl.id
 			close(w.claimPieceCh)
 			// HACK:
 			// not unlocking here on purpose, so that the piece handler
-			// can unlock it after the claimed ch is properly closed
+			// can unlock it after the pieceClaimedCh is closed, to avoid
+			// double closing or closing while another goroutine is trying to
+			// claim the same piece
 			break loop
 		}
 	}
@@ -191,6 +229,7 @@ loop:
 
 func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation) bool {
 	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.isMachineCompatibleWith] machine is null")
 
 	for _, tool := range m.tools {
 		if tool == t.Tool {
@@ -198,6 +237,22 @@ func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation)
 		}
 	}
 	return false
+}
+
+func (pl *ProcessingLine) currentTool(mIndex int) string {
+	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.currentTool] machine is null")
+	return m.selectedTool
+}
+
+func (pl *ProcessingLine) getNItemsInConveyor() int {
+	nItemsInQueue := 0
+	for _, conveyor := range pl.conveyorLine {
+		if conveyor.item != nil {
+			nItemsInQueue++
+		}
+	}
+	return nItemsInQueue
 }
 
 func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControlForm {
@@ -215,33 +270,65 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		return nil
 	}
 
-	if topCompatible {
-		chainSteps := false
-		toolBot := currentStep.Tool // Doesn't matter if there is no step chain
+	stepsCompleted := 1
+	intrinsicTime := currentStep.Time
 
-		if piece.CurrentStep+1 < len(piece.Steps) {
-			nextStep := piece.Steps[piece.CurrentStep+1]
-			toolBot = nextStep.Tool
-			chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
+	queueSize := pl.getNItemsInConveyor()
+
+	if !topCompatible {
+		if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+			intrinsicTime += MACHINE_TOOL_SWAP_TIME
 		}
 
 		return &processControlForm{
-			toolTop:    currentStep.Tool,
-			toolBot:    toolBot,
+			toolTop:    pl.currentTool(LINE_DEFAULT_M1_POS),
+			toolBot:    currentStep.Tool,
 			pieceKind:  piece.Kind,
 			id:         id,
-			processTop: true,
-			processBot: chainSteps,
+			processTop: false,
+			processBot: true,
+
+			// Metadata
+			stepsCompleted: 1,
+			intrinsicTime:  intrinsicTime,
+			queueSize:      queueSize,
 		}
+	}
+
+	chainSteps := false
+
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M1_POS) {
+		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	}
+
+	toolBot := pl.currentTool(LINE_DEFAULT_M2_POS)
+	if piece.CurrentStep+1 < len(piece.Steps) {
+		nextStep := piece.Steps[piece.CurrentStep+1]
+		toolBot = nextStep.Tool
+		chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
+
+		if chainSteps {
+			stepsCompleted++
+			intrinsicTime += nextStep.Time
+		}
+	}
+
+	if toolBot != pl.currentTool(LINE_DEFAULT_M2_POS) {
+		intrinsicTime += MACHINE_TOOL_SWAP_TIME
 	}
 
 	return &processControlForm{
 		toolTop:    currentStep.Tool,
-		toolBot:    currentStep.Tool,
+		toolBot:    toolBot,
 		pieceKind:  piece.Kind,
 		id:         id,
-		processTop: false,
-		processBot: true,
+		processTop: true,
+		processBot: chainSteps,
+
+		// Metadata
+		stepsCompleted: stepsCompleted,
+		intrinsicTime:  intrinsicTime,
+		queueSize:      queueSize,
 	}
 }
 

@@ -147,6 +147,7 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	}
 
 	nRegistered := 0
+	lineOffers := make(map[string]int)
 	for _, line := range factory.processLines {
 		if line.id == utils.ID_L0 {
 			continue
@@ -154,7 +155,22 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 
 		// The control ID does not matter in this case
 		if form := line.createBestForm(piece, 0); form != nil {
-			line.registerWaitingPiece(waiter)
+			score := form.metadataScore()
+			lineOffers[line.id] = score
+		}
+	}
+
+	bestScore := 9999999
+	for _, score := range lineOffers {
+		if score < bestScore {
+			bestScore = score
+		}
+	}
+
+	leniency := 0.1 // 10% leniency
+	for lineId, score := range lineOffers {
+		if (1-leniency)*float64(score) <= float64(bestScore) {
+			factory.processLines[lineId].registerWaitingPiece(waiter)
 			nRegistered++
 		}
 	}
@@ -212,9 +228,9 @@ func sendToProduction(
 	claimPieceCh := make(chan string)
 	lock := &sync.Mutex{}
 	waiter := &freeLineWaiter{
-		claimed:      claimed,
-		claimPieceCh: claimPieceCh,
-		claimLock:    lock,
+		pieceClaimedCh: claimed,
+		claimPieceCh:   claimPieceCh,
+		claimLock:      lock,
 	}
 
 	registerWaitingPiece(waiter, &piece)

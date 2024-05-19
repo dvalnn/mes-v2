@@ -314,10 +314,10 @@ func TestPruneDeadWaiters(t *testing.T) {
 		id:           u.ID_L1,
 		conveyorLine: initType1Conveyor(),
 		waitingPieces: []*freeLineWaiter{
-			{claimed: deadWaitCh1},
-			{claimed: deadWaitCh2},
-			{claimed: aliveWaitCh1},
-			{claimed: deadWaitCh3},
+			{pieceClaimedCh: deadWaitCh1},
+			{pieceClaimedCh: deadWaitCh2},
+			{pieceClaimedCh: aliveWaitCh1},
+			{pieceClaimedCh: deadWaitCh3},
 		},
 	}
 
