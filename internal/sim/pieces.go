@@ -192,6 +192,10 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
 			handler = sendToProduction(piece)
+			log.Printf("[PieceHandler] Piece %v sent to production at step (%d of %d)\n",
+				piece.ErpIdentifier,
+				piece.CurrentStep,
+				len(piece.Steps))
 
 			for {
 				select {
@@ -229,10 +233,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						)
 					}
 					log.Printf(
-						"[PieceHandler] Piece %v transformed at line %v\n",
-						piece.ErpIdentifier,
-						line,
-					)
+						"[PieceHandler] Piece %v transformed at line %v (step %d of %d)\n",
+						piece.ErpIdentifier, line, piece.CurrentStep, len(piece.Steps))
 
 				case line, open := <-handler.lineExitCh:
 					u.Assert(open, "[PieceHandler] lineExitCh closed")

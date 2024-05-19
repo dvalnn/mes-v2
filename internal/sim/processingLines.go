@@ -227,7 +227,7 @@ loop:
 	}
 }
 
-func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation) bool {
+func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t Transformation) bool {
 	m := pl.conveyorLine[mIndex].machine
 	u.Assert(m != nil, "[ProcessingLine.isMachineCompatibleWith] machine is null")
 
@@ -281,8 +281,8 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 	}
 
 	currentStep := piece.Steps[piece.CurrentStep]
-	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, &currentStep)
-	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &currentStep)
+	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, currentStep)
+	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep)
 	if !topCompatible && !botCompatible {
 		return nil
 	}
@@ -323,7 +323,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 	if piece.CurrentStep+1 < len(piece.Steps) {
 		nextStep := piece.Steps[piece.CurrentStep+1]
 
-		if pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep) {
+		if pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, nextStep) {
 			chainSteps = true
 			stepsCompleted++
 			toolBot = nextStep.Tool

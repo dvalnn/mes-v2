@@ -157,7 +157,6 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		if form := line.createBestForm(piece, 0); form != nil {
 			score := form.metadataScore()
 			lineOffers[line.id] = score
-			log.Printf("Line: %s\tCandidature: %v\tScore:%d\n", line.id, form, score)
 		}
 	}
 
@@ -169,11 +168,10 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	}
 
 	log.Printf("Best score: %d\n", bestScore)
-	leniency := 0.1 // 10% leniency
+	leniency := 0.2 // 10% leniency
 	for lineId, score := range lineOffers {
 		if (1-leniency)*float64(score) <= float64(bestScore) {
 			factory.processLines[lineId].registerWaitingPiece(waiter)
-			log.Printf("Registered piece %s to line %s with score %d\n", piece.ErpIdentifier, lineId, score)
 			nRegistered++
 		}
 	}
@@ -201,13 +199,14 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolBot)
 
 	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
-	writeResponse, err := factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
+	opcuavars := factory.processLines[lineID].plc.CommandOpcuaVars()
+	writeResponse, err := factory.plcClient.Write(opcuavars, ctx)
 
-	log.Printf("Control Form: %+v", factory.processLines[lineID].plc.CommandOpcuaVars())
-	log.Printf("Write response: %+v", writeResponse.Results[0])
+	log.Printf("[sendToLine] processForm: %v\tControl Form: %+v", controlForm, opcuavars)
+	log.Printf("[sendToLine] Write response: %+v", writeResponse)
 
-	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
-	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
+	utils.Assert(err == nil, "[sendToLine] Error writing to PLC")
+	utils.Assert(controlForm != nil, "[sendToLine] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,
