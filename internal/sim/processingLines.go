@@ -174,10 +174,10 @@ func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 	return &plc.CellCommand{
 		TxId:       plc.OpcuaInt16{Value: pcf.id},
 		PieceKind:  plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
-		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
 		ProcessTop: plc.OpcuaBool{Value: pcf.processTop},
-		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
+		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
 		ToolTop:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolTop)},
+		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
 	}
 }
 
