@@ -251,6 +251,10 @@ func (pl *ProcessingLine) setCurrentTool(mIndex int, tool string) {
 		return
 	}
 
+	if tool == "" {
+		return // No tool change
+	}
+
 	m := pl.conveyorLine[mIndex].machine
 	u.Assert(m != nil, "[ProcessingLine.currentTool] machine is null")
 	for _, t := range m.tools {
@@ -298,7 +302,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		}
 
 		return &processControlForm{
-			toolTop:    pl.currentTool(LINE_DEFAULT_M1_POS),
+			toolTop:    "", // No tool needed
 			processTop: false,
 
 			toolBot:    currentStep.Tool,
@@ -326,13 +330,16 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		if pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, nextStep) {
 			chainSteps = true
 			stepsCompleted++
-			toolBot = nextStep.Tool
 			intrinsicTime += nextStep.Time
+			if nextStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+				intrinsicTime += MACHINE_TOOL_SWAP_TIME
+				toolBot = nextStep.Tool
+			}
+		} else {
+			toolBot = "" // no tool needed
 		}
-	}
-
-	if toolBot != pl.currentTool(LINE_DEFAULT_M2_POS) {
-		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	} else {
+		toolBot = "" // no tool needed
 	}
 
 	return &processControlForm{
