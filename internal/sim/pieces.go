@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 )
 
 // TransfCompletionForm is a form used to post the completion of a transformation to the ERP.
@@ -180,6 +181,9 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 	errCh := make(chan error)
 	wakeUpCh := make(chan struct{})
 
+	piecePool := make(map[string]struct{})
+	piecePoolLock := sync.Mutex{}
+
 	pieceTracker := func(ctx context.Context, piece Piece) {
 		var handler *itemHandler
 
@@ -212,7 +216,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 
 					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
 						errCh <- fmt.Errorf(
-							"[PieceHandler] Failed to post warehouse exit: %w",
+							"[PieceHandler] Piece %s failed to post warehouse exit: %w",
+							piece.ErpIdentifier,
 							err,
 						)
 					}
@@ -228,7 +233,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					err := piece.transform(line).Post(ctx)
 					if err != nil {
 						errCh <- fmt.Errorf(
-							"[PieceHandler] Failed to post completion: %w",
+							"[PieceHandler] Piece %s failed to post completion: %w",
+							piece.ErpIdentifier,
 							err,
 						)
 					}
@@ -246,7 +252,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 
 					if err := piece.enterWarehouse(wID).Post(ctx); err != nil {
 						errCh <- fmt.Errorf(
-							"[PieceHandler] Failed to post warehouse entry: %w",
+							"[PieceHandler] Piece %s failed to post warehouse entry: %w",
+							piece.ErpIdentifier,
 							err,
 						)
 					}
@@ -262,6 +269,9 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 		}
 
 		piece.validateCompletion()
+		piecePoolLock.Lock()
+		defer piecePoolLock.Unlock()
+		delete(piecePool, piece.ErpIdentifier)
 	}
 
 	go func() {
@@ -276,19 +286,24 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 			case _, open := <-wakeUpCh:
 				u.Assert(open, "[PieceHandler] wakeUpCh closed")
 
-				// TODO: rework piece set from erp to always be a new piece
-				// TODO: change the hardcoded 100 to a variable or constant
-				if newPieces, err := GetPieces(ctx, 100); err != nil {
+				if newPieces, err := GetPieces(ctx, 32); err != nil {
 					errCh <- err
 				} else {
 					// Should never happen as this function is only
 					// waken up when there are new pieces to handle
 					u.Assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
 
-					for _, piece := range newPieces {
-						// TODO: handle piece priority
-						go pieceTracker(ctx, piece)
-					}
+					func() {
+						piecePoolLock.Lock()
+						defer piecePoolLock.Unlock()
+
+						for _, piece := range newPieces {
+							if _, ok := piecePool[piece.ErpIdentifier]; !ok {
+								piecePool[piece.ErpIdentifier] = struct{}{}
+								go pieceTracker(ctx, piece)
+							}
+						}
+					}()
 
 				}
 			}
