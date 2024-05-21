@@ -128,12 +128,14 @@ func StartShipmentHandler(
 								if nArrived >= shipment.NPieces {
 									break
 								}
+								log.Printf("[ShipmentHandler] Communicating with supply line %d", i)
 								material := PieceStrToInt(shipment.MaterialKind)
 								factory.supplyLines[i].NewShipment(material)
-								_, err := factory.plcClient.Write(
+								response, err := factory.plcClient.Write(
 									factory.supplyLines[i].CommandOpcuaVars(),
 									writeCtx,
 								)
+								log.Println(response.Results)
 								utils.Assert(err == nil, "[ShipmentHandler] Error writing to supply line")
 								expectedAcks = append(expectedAcks, factory.supplyLines[i].LastCommandTxId())
 								nArrived++

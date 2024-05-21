@@ -279,7 +279,11 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 		factory, mutex := getFactoryInstance()
 		defer mutex.Unlock()
 
-		err := factory.plcClient.Connect(ctx)
+		connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		err := factory.plcClient.Connect(connectCtx)
+		log.Printf("[StartFactoryHandler] Connected to factory floor")
 		utils.Assert(err == nil, "[StartFactoryHandler] Error connecting to factory floor")
 	}()
 
