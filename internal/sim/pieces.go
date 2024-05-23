@@ -172,7 +172,7 @@ func (p *Piece) validateCompletion() {
 	)
 
 	log.Printf(
-		"[PieceHandler] Piece %v of type %v successfully producted \n",
+		"[PieceHandler] Piece %v of type %v successfully produced \n",
 		p.ErpIdentifier,
 		p.Kind,
 	)

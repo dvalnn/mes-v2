@@ -68,17 +68,25 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 				return
 
 			case deliveries := <-deliveryCh:
+				log.Printf("[DeliveryHandler] Received %d new deliveries\n", len(deliveries))
+
 				linesRemaining := plc.NUMBER_OF_OUTPUTS
+				startingLine := 0
 				for _, delivery := range deliveries {
 					log.Printf(
-						"[DeliveryHandler] New delivery (id %v): %d pieces of type %v",
+						"[DeliveryHandler] Delivery %v: %d pieces of type %v",
 						delivery.ID,
 						delivery.Quantity,
 						delivery.Piece,
 					)
-					u.Assert(linesRemaining >= 0, "[DeliveryHandler] Not enough delivery lines available")
+					if linesRemaining <= 0 {
+						log.Printf("[DeliveryHandler] No more delivery lines available")
+						continue
+					}
 
 					neededLines := int(math.Ceil(float64(delivery.Quantity) / DELIVERY_LINE_CAPACITY))
+					log.Printf("[DeliveryHandler] Delivery %s needs: %d lines\n",
+						delivery.ID, neededLines)
 					linesRemaining -= neededLines
 
 					func() {
@@ -90,22 +98,26 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 						defer cancel()
 
 						for i := range neededLines {
-							dl := factory.deliveryLines[i]
+							dl := factory.deliveryLines[startingLine+i]
 							quantity := piecesRemaining
 							if quantity > DELIVERY_LINE_CAPACITY {
 								quantity = DELIVERY_LINE_CAPACITY
 							}
 							piecesRemaining -= quantity
+							log.Printf("[DeliveryHandler] Writing to delivery line %d; %v of type %v\n",
+								i, quantity, delivery.Piece)
 							dl.SetDelivery(int16(quantity), PieceStrToInt(delivery.Piece))
 							_, err := factory.plcClient.Write(dl.OpcuaVars(), writeCtx)
 							u.Assert(err == nil, "[DeliveryHandler] Error writing to delivery line")
 						}
 						u.Assert(piecesRemaining == 0, "[DeliveryHandler] Wrong number of pieces delivered")
+						startingLine += neededLines
 					}()
 
 					// 3 - Confirm the delivery to the ERP
 					err := delivery.PostConfirmation(ctx, delivery.ID)
 					u.Assert(err == nil, "[DeliveryHandler] Error confirming delivery")
+					log.Printf("[DeliveryHandler] Delivery %v confirmed\n", delivery.ID)
 				}
 			}
 		}
