@@ -2,6 +2,7 @@ package sim
 
 import (
 	"context"
+	"fmt"
 	"log"
 	plc "mes/internal/net/plc"
 	"mes/internal/utils"
@@ -153,8 +154,7 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 			continue
 		}
 
-		// The control ID does not matter in this case
-		if form := line.createBestForm(piece, 0); form != nil {
+		if form := line.createBestForm(piece); form != nil {
 			score := form.metadataScore()
 			lineOffers[line.id] = score
 		}
@@ -191,23 +191,21 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
-	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
+	piece.ControlID = factory.processLines[lineID].plc.LastCommandTxId() + 1
+	controlForm := factory.processLines[lineID].createBestForm(piece)
+	utils.Assert(controlForm != nil, "[sendToLine] controlForm is nil")
 
 	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolTop)
 	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolBot)
 
+	log.Printf("[sendToLine] line: %s processForm: %v piece: %s\n",
+		lineID, controlForm, piece.ErpIdentifier)
 	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
 	opcuavars := factory.processLines[lineID].plc.CommandOpcuaVars()
-	writeResponse, err := factory.plcClient.Write(opcuavars, ctx)
-
-	log.Printf("[sendToLine] line:%v processForm:%v\n", lineID, controlForm)
-	log.Printf("[sendToLine] line:%v control form: %+v %+v %+v %+v %+v %+v\n", lineID,
-		opcuavars[0], opcuavars[1], opcuavars[2], opcuavars[3], opcuavars[4], opcuavars[5])
-	log.Printf("[sendToLine] Write response: %+v", writeResponse)
-
+	_, err := factory.plcClient.Write(opcuavars, ctx)
 	utils.Assert(err == nil, "[sendToLine] Error writing to PLC")
-	utils.Assert(controlForm != nil, "[sendToLine] controlForm is nil")
+	// log.Printf("[sendToLine] Write response: %+v", writeResponse.ResponseHeader)
+
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,
@@ -229,28 +227,40 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 }
 
 func sendToProduction(
-	piece Piece,
+	ctx context.Context,
+	piece *Piece,
 ) *itemHandler {
 	claimed := make(chan struct{})
 	claimPieceCh := make(chan string)
 	lock := &sync.Mutex{}
+	countLock := &sync.Mutex{}
 	waiter := &freeLineWaiter{
 		pieceClaimedCh: claimed,
 		claimPieceCh:   claimPieceCh,
 		claimLock:      lock,
+		claimCount:     0,
+		claimCountLock: countLock,
 	}
 
-	registerWaitingPiece(waiter, &piece)
+	registerWaitingPiece(waiter, piece)
 
 	// Once a line is available, the check
-	line, open := <-claimPieceCh
-	close(claimed)
-	lock.Unlock()
+	select {
+	case <-ctx.Done():
+		log.Panicf("[sendToProduction] Context cancelled before piece %s was claimed",
+			piece.ErpIdentifier)
+	case line, open := <-claimPieceCh:
+		close(claimed)
+		lock.Unlock()
 
-	utils.Assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
-	log.Printf("[sendToProduction] Piece %v claimed by line %s", piece.ErpIdentifier, line)
-
-	return sendToLine(line, &piece)
+		errorMsg := fmt.Sprintf("[sendToProduction] claimPieceCh closed before piece %s was claimed: %s",
+			piece.ErpIdentifier, line)
+		utils.Assert(open, errorMsg)
+		log.Printf("[sendToProduction] Piece %v claimed by line %s",
+			piece.ErpIdentifier, line)
+		return sendToLine(line, piece)
+	}
+	panic("unreachable")
 }
 
 // TODO: rethink this way of handling updates

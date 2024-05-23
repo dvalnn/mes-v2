@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // TransfCompletionForm is a form used to post the completion of a transformation to the ERP.
@@ -193,16 +194,31 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 			piece.Steps[len(piece.Steps)-1].ProductKind,
 		)
 
+		watchdogTimeout := 1 * time.Minute
+
 	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
-			handler = sendToProduction(piece)
+
+			nextState := "lineEntry"
+			func() {
+				ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+				defer cancel()
+				handler = sendToProduction(ctx, &piece)
+			}()
 			log.Printf("[PieceHandler] Piece %v sent to production at step (%d of %d)\n",
 				piece.ErpIdentifier,
 				piece.CurrentStep,
 				len(piece.Steps))
 
 			for {
+				watchdog := time.NewTimer(watchdogTimeout)
 				select {
+				case <-watchdog.C:
+					log.Printf(
+						"[PieceHandler - WARNING] Watchdog timeout. Piece %s waiting for state %s",
+						piece.ErpIdentifier, nextState)
+					continue StepLoop // restart the loop, register again
+
 				case err, open := <-handler.errCh:
 					u.Assert(open, "[PieceHandler] error channel closed")
 					errCh <- fmt.Errorf("[PieceHandler] %w", err)
@@ -212,6 +228,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					return
 
 				case line, open := <-handler.lineEntryCh:
+					nextState = "transform"
+
 					u.Assert(open, "[PieceHandler] lineEntryCh closed")
 
 					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
@@ -228,6 +246,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					)
 
 				case line, open := <-handler.transformCh:
+					nextState = "lineExitCh"
+
 					u.Assert(open, "[PieceHandler] transformCh closed")
 
 					err := piece.transform(line).Post(ctx)
@@ -243,12 +263,30 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						piece.ErpIdentifier, line, piece.CurrentStep, len(piece.Steps))
 
 				case line, open := <-handler.lineExitCh:
+					nextState = "lineEntry"
+
 					u.Assert(open, "[PieceHandler] lineExitCh closed")
 
 					wID := u.ID_W2
 					if line == u.ID_L0 {
 						wID = u.ID_W1
 					}
+
+					// Ack the warehouse entry
+					func() {
+						factory, mutex := getFactoryInstance()
+						defer mutex.Unlock()
+
+						writeContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+						defer cancel()
+
+						plc := factory.processLines[line].plc
+						plc.AckPiece(piece.ControlID)
+
+						_, err := factory.plcClient.Write(plc.AckOpcuaVars(), writeContext)
+						u.Assert(err == nil,
+							"[PieceHandler] Error acknowledging warehouse entry")
+					}()
 
 					if err := piece.enterWarehouse(wID).Post(ctx); err != nil {
 						errCh <- fmt.Errorf(
@@ -263,8 +301,10 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						wID,
 					)
 
+					watchdog.Stop()
 					continue StepLoop
 				}
+				watchdog.Stop()
 			}
 		}
 

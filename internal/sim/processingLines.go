@@ -185,10 +185,28 @@ type freeLineWaiter struct {
 	pieceClaimedCh <-chan struct{}
 	claimPieceCh   chan<- string
 	claimLock      *sync.Mutex
+	claimCountLock *sync.Mutex
+	claimCount     int
+}
+
+func (flw *freeLineWaiter) incrementClaimCount() {
+	flw.claimCountLock.Lock()
+	flw.claimCount++
+	flw.claimCountLock.Unlock()
+}
+
+func (flw *freeLineWaiter) decrementClaimCount() {
+	flw.claimCountLock.Lock()
+	flw.claimCount--
+	flw.claimCountLock.Unlock()
+
+	u.Assert(flw.claimCount >= 0,
+		"[freeLineWaiter.decrementClaimCount] claimCount is not positive")
 }
 
 func (pl *ProcessingLine) registerWaitingPiece(w *freeLineWaiter) {
 	pl.waitingPieces = append(pl.waitingPieces, w)
+	w.incrementClaimCount()
 }
 
 func (pl *ProcessingLine) pruneDeadWaiters() {
@@ -196,6 +214,7 @@ func (pl *ProcessingLine) pruneDeadWaiters() {
 	for _, w := range pl.waitingPieces {
 		select {
 		case <-w.pieceClaimedCh:
+			w.decrementClaimCount()
 		default:
 			aliveWaiters = append(aliveWaiters, w)
 		}
@@ -276,11 +295,11 @@ func (pl *ProcessingLine) getNItemsInConveyor() int {
 	return nItemsInQueue
 }
 
-func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControlForm {
+func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 	if pl.id == u.ID_L0 {
 		return &processControlForm{
 			pieceKind: piece.Kind,
-			id:        id,
+			id:        piece.ControlID,
 		}
 	}
 
@@ -309,7 +328,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 			processBot: true,
 
 			pieceKind: piece.Kind,
-			id:        id,
+			id:        piece.ControlID,
 
 			// Metadata
 			stepsCompleted: 1,
@@ -350,7 +369,7 @@ func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControl
 		processBot: chainSteps,
 
 		pieceKind: piece.Kind,
-		id:        id,
+		id:        piece.ControlID,
 
 		// Metadata
 		stepsCompleted: stepsCompleted,

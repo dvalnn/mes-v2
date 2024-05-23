@@ -21,7 +21,7 @@ func TestCreateBestFormForOnlyM1(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_1}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM1, 0)
+	best := pLine.createBestForm(&minimalPieceForM1)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_1,
 		toolBot:    u.TOOL_1,
@@ -48,7 +48,7 @@ func TestCreateBestFormForOnlyM2(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_4}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM2, 0)
+	best := pLine.createBestForm(&minimalPieceForM2)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_4,
 		toolBot:    u.TOOL_4,
@@ -75,7 +75,7 @@ func TestCreateBestFormWithChain(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_1}, {Tool: u.TOOL_4}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForChain, 0)
+	best := pLine.createBestForm(&minimalPieceForChain)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_1,
 		toolBot:    u.TOOL_4,
@@ -102,7 +102,7 @@ func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
 		Steps: []Transformation{{Tool: u.TOOL_4}, {Tool: u.TOOL_1}},
 	}
 
-	best := pLine.createBestForm(&minimalPieceForM2WithExtra, 0)
+	best := pLine.createBestForm(&minimalPieceForM2WithExtra)
 	expected := &processControlForm{
 		toolTop:    u.TOOL_4,
 		toolBot:    u.TOOL_4,

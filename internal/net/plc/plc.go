@@ -1,6 +1,7 @@
 package plc
 
 import (
+	"log"
 	"mes/internal/utils"
 	"strconv"
 
@@ -40,14 +41,28 @@ func (cs *CellState) OpcuaVars() []opcuaVariable {
 }
 
 type Cell struct {
-	command *CellCommand
-
-	state    *CellState
-	oldState *CellState
+	command     *CellCommand
+	state       *CellState
+	oldState    *CellState
+	cellExitAck OpcuaInt16
 }
 
 func (c *Cell) StateOpcuaVars() []opcuaVariable {
 	return c.state.OpcuaVars()
+}
+
+func (c *Cell) AckOpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&c.cellExitAck,
+	}
+}
+
+func (c *Cell) AckPiece(txId int16) {
+	utils.Assert(txId >= 0, "[AckPiece] Invalid txId must be greater than 0")
+	if txId != c.cellExitAck.Value+1 {
+		log.Printf("[AckPiece - WARNING] txId: %d, cellExitAck: %d\n", txId, c.cellExitAck.Value)
+	}
+	c.cellExitAck.Value = txId
 }
 
 func (c *Cell) UpdateState(response *ua.ReadResponse) {
@@ -108,6 +123,7 @@ func InitCells() []*Cell {
 
 		commandPrefix := NODE_ID_CELL + strconv.Itoa(i)
 		controlPrefix := NODE_ID_CELL_CONTROL + strconv.Itoa(i)
+		ackID := NODE_ID_WAREHOUSE_ACK + strconv.Itoa(i)
 
 		cells[i] = &Cell{
 			command: &CellCommand{
@@ -118,7 +134,6 @@ func InitCells() []*Cell {
 				ToolBot:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLBOT_POSTFIX},
 				ToolTop:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLTOP_POSTFIX},
 			},
-			// init old state = state
 			state: &CellState{
 				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
 				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
@@ -127,6 +142,7 @@ func InitCells() []*Cell {
 				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
 				TxIdPieceOut: OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_IN_POSTFIX},
 			},
+			cellExitAck: OpcuaInt16{nodeID: ackID},
 		}
 	}
 
