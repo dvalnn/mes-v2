@@ -9,22 +9,30 @@ import (
 )
 
 type CellCommand struct {
-	TxId       OpcuaInt16
-	PieceKind  OpcuaInt16
-	ProcessBot OpcuaBool
+	TxId      OpcuaInt16
+	PieceKind OpcuaInt16
+
 	ProcessTop OpcuaBool
-	ToolBot    OpcuaInt16
 	ToolTop    OpcuaInt16
+	RepeatTop  OpcuaInt16
+
+	ProcessBot OpcuaBool
+	ToolBot    OpcuaInt16
+	RepeatBot  OpcuaInt16
 }
 
 func (cc *CellCommand) OpcuaVars() []opcuaVariable {
 	return []opcuaVariable{
 		&cc.TxId,
 		&cc.PieceKind,
-		&cc.ProcessBot,
+
 		&cc.ProcessTop,
-		&cc.ToolBot,
 		&cc.ToolTop,
+		&cc.RepeatTop,
+
+		&cc.ProcessBot,
+		&cc.ToolBot,
+		&cc.RepeatBot,
 	}
 }
 
@@ -79,10 +87,14 @@ func (c *Cell) UpdateState(response *ua.ReadResponse) {
 func (c *Cell) UpdateCommandOpcuaVars(pcf *CellCommand) {
 	c.command.TxId.Value = pcf.TxId.Value
 	c.command.PieceKind.Value = pcf.PieceKind.Value
-	c.command.ProcessBot.Value = pcf.ProcessBot.Value
+
 	c.command.ProcessTop.Value = pcf.ProcessTop.Value
-	c.command.ToolBot.Value = pcf.ToolBot.Value
 	c.command.ToolTop.Value = pcf.ToolTop.Value
+	c.command.RepeatTop.Value = pcf.RepeatTop.Value
+
+	c.command.ProcessBot.Value = pcf.ProcessBot.Value
+	c.command.ToolBot.Value = pcf.ToolBot.Value
+	c.command.RepeatBot.Value = pcf.RepeatBot.Value
 }
 
 func (c *Cell) InPieceTxId() int16 {
@@ -127,12 +139,16 @@ func InitCells() []*Cell {
 
 		cells[i] = &Cell{
 			command: &CellCommand{
-				TxId:       OpcuaInt16{nodeID: commandPrefix + CELL_ID_POSTFIX},
-				PieceKind:  OpcuaInt16{nodeID: commandPrefix + CELL_PIECE_POSTFIX},
-				ProcessBot: OpcuaBool{nodeID: commandPrefix + CELL_PROCESSBOT_POSTFIX},
+				TxId:      OpcuaInt16{nodeID: commandPrefix + CELL_ID_POSTFIX},
+				PieceKind: OpcuaInt16{nodeID: commandPrefix + CELL_PIECE_POSTFIX},
+
 				ProcessTop: OpcuaBool{nodeID: commandPrefix + CELL_PROCESSTOP_POSTFIX},
-				ToolBot:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLBOT_POSTFIX},
 				ToolTop:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLTOP_POSTFIX},
+				RepeatTop:  OpcuaInt16{nodeID: commandPrefix + CELL_REPEATTOP_POSTFIX},
+
+				ProcessBot: OpcuaBool{nodeID: commandPrefix + CELL_PROCESSBOT_POSTFIX},
+				ToolBot:    OpcuaInt16{nodeID: commandPrefix + CELL_TOOLBOT_POSTFIX},
+				RepeatBot:  OpcuaInt16{nodeID: commandPrefix + CELL_REPEATBOT_POSTFIX},
 			},
 			state: &CellState{
 				TxIdPieceIN:  OpcuaInt16{nodeID: controlPrefix + CELL_CONTROL_OUT_POSTFIX},
@@ -226,6 +242,7 @@ func (s *SupplyLine) UpdateState(response *ua.ReadResponse) {
 	utils.Assert(response != nil, "Response is nil")
 	utils.Assert(len(response.Results) == 1, "Supply line state response has wrong number of results")
 	utils.Assert(response.Results[0].Value.Type() == ua.TypeIDInt16, "Supply line state response has wrong type")
+
 	s.oldState.TxAckId.Value = s.state.TxAckId.Value // save old state before updating
 	s.state.TxAckId.Value = response.Results[0].Value.Value().(int16)
 }
@@ -260,47 +277,79 @@ func (w *Warehouse) OpcuaVars() []opcuaVariable {
 	}
 }
 
-type DeliveryLine struct {
+type DeliveryCommand struct {
 	TxId  OpcuaInt16
 	Np    OpcuaInt16
 	Piece OpcuaInt16
 }
 
+type DeliveryState struct {
+	TxAckId OpcuaInt16
+}
+
+type DeliveryLine struct {
+	command  *DeliveryCommand
+	state    *DeliveryState
+	oldState *DeliveryState
+}
+
 func InitDeliveryLines() []*DeliveryLine {
-	outputs := make([]*DeliveryLine, NUMBER_OF_OUTPUTS)
+	lines := make([]*DeliveryLine, NUMBER_OF_OUTPUTS)
 
 	for i := range NUMBER_OF_OUTPUTS {
 		nodeIDPrefix := NODE_ID_OUTPUTS + strconv.Itoa(i+1)
+		nodeIDOoutputConfirm := NODE_ID_OUTPUT_ACK + strconv.Itoa(i+1)
 
-		outputs[i] = &DeliveryLine{
-			TxId: OpcuaInt16{
-				nodeID: nodeIDPrefix + OUTPUT_ID_POSTFIX,
-				Value:  0,
+		lines[i] = &DeliveryLine{
+			command: &DeliveryCommand{
+				TxId:  OpcuaInt16{nodeID: nodeIDPrefix + OUTPUT_ID_POSTFIX},
+				Np:    OpcuaInt16{nodeID: nodeIDPrefix + OUTPUT_NP_POSTFIX},
+				Piece: OpcuaInt16{nodeID: nodeIDPrefix + OUTPUT_PIECE_POSTFIX},
 			},
-			Np: OpcuaInt16{
-				nodeID: nodeIDPrefix + OUTPUT_NP_POSTFIX,
-				Value:  0,
-			},
-			Piece: OpcuaInt16{
-				nodeID: nodeIDPrefix + OUTPUT_PIECE_POSTFIX,
-				Value:  0,
-			},
+			state:    &DeliveryState{TxAckId: OpcuaInt16{nodeID: nodeIDOoutputConfirm}},
+			oldState: &DeliveryState{TxAckId: OpcuaInt16{nodeID: nodeIDOoutputConfirm}},
 		}
 	}
 
-	return outputs
+	return lines
 }
 
-func (fo *DeliveryLine) OpcuaVars() []opcuaVariable {
+func (dl *DeliveryLine) CommandOpcuaVars() []opcuaVariable {
 	return []opcuaVariable{
-		&fo.TxId,
-		&fo.Np,
-		&fo.Piece,
+		&dl.command.TxId,
+		&dl.command.Np,
+		&dl.command.Piece,
 	}
 }
 
+func (dl *DeliveryLine) StateOpcuaVars() []opcuaVariable {
+	return []opcuaVariable{
+		&dl.state.TxAckId,
+	}
+}
+
+func (dl *DeliveryLine) UpdateState(response *ua.ReadResponse) {
+	utils.Assert(response != nil, "Response is nil")
+	utils.Assert(len(response.Results) == 1,
+		"Delivery line state response has wrong number of results")
+	utils.Assert(response.Results[0].Value.Type() == ua.TypeIDInt16,
+		"Delivery line state response has wrong type")
+
+	dl.oldState.TxAckId.Value = dl.state.TxAckId.Value // save old state before updating
+	dl.state.TxAckId.Value = response.Results[0].Value.Value().(int16)
+}
+
 func (dl *DeliveryLine) SetDelivery(quantity int16, pieceKind int16) {
-	dl.TxId.Value++
-	dl.Np.Value = quantity
-	dl.Piece.Value = pieceKind
+	dl.command.TxId.Value++
+	dl.command.Np.Value = quantity
+	dl.command.Piece.Value = pieceKind
+}
+
+func (dl *DeliveryLine) LastCommandTxId() int16 {
+	return dl.command.TxId.Value
+}
+
+func (dl *DeliveryLine) PieceAcked() bool {
+	return dl.state.TxAckId.Value == dl.command.TxId.Value &&
+		dl.state.TxAckId.Value != dl.oldState.TxAckId.Value
 }

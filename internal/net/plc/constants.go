@@ -25,6 +25,8 @@ const (
 	CELL_PROCESSTOP_POSTFIX = ".processTop"
 	CELL_TOOLBOT_POSTFIX    = ".tool_MBot"
 	CELL_TOOLTOP_POSTFIX    = ".tool_MTop"
+	CELL_REPEATTOP_POSTFIX  = ".repeatTop"
+	CELL_REPEATBOT_POSTFIX  = ".repeatBot"
 
 	// Warehouse entry Ack
 	NODE_ID_WAREHOUSE_ACK = POU_PATH + "mes"
@@ -40,4 +42,6 @@ const (
 	OUTPUT_ID_POSTFIX    = ".id"
 	OUTPUT_NP_POSTFIX    = ".np"
 	OUTPUT_PIECE_POSTFIX = ".piece"
+
+	NODE_ID_OUTPUT_ACK = POU_PATH + "idr"
 )

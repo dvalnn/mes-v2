@@ -32,6 +32,8 @@ type itemHandler struct {
 type conveyorItem struct {
 	handler   *conveyorItemHandler
 	controlID int16
+	m1Repeats int16
+	m2Repeats int16
 	useM1     bool
 	useM2     bool
 }
@@ -104,6 +106,8 @@ type processControlForm struct {
 	toolBot    string
 	pieceKind  string
 	id         int16
+	repeatTop  int16
+	repeatBot  int16
 	processTop bool
 	processBot bool
 
@@ -123,7 +127,7 @@ type processControlForm struct {
 func (pcf *processControlForm) metadataScore() int {
 	return pcf.intrinsicTime*TIME_WEIGHT +
 		pcf.queueSize*QUEUE_WEIGHT +
-		(2-pcf.stepsCompleted)*STEP_WEIGHT
+		(3-pcf.stepsCompleted)*STEP_WEIGHT
 }
 
 func ToolStrToInt(s string) int16 {
@@ -172,12 +176,16 @@ func PieceStrToInt(s string) int16 {
 
 func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 	return &plc.CellCommand{
-		TxId:       plc.OpcuaInt16{Value: pcf.id},
-		PieceKind:  plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
+		TxId:      plc.OpcuaInt16{Value: pcf.id},
+		PieceKind: plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
+
 		ProcessTop: plc.OpcuaBool{Value: pcf.processTop},
-		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
 		ToolTop:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolTop)},
+		RepeatTop:  plc.OpcuaInt16{Value: pcf.repeatTop},
+
+		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
 		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
+		RepeatBot:  plc.OpcuaInt16{Value: pcf.repeatBot},
 	}
 }
 
@@ -303,79 +311,141 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 		}
 	}
 
-	currentStep := piece.Steps[piece.CurrentStep]
+	currentStepIdx := piece.CurrentStep
+	currentStep := piece.Steps[currentStepIdx]
+
 	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, currentStep)
 	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep)
+
 	if !topCompatible && !botCompatible {
 		return nil
 	}
 
+	if !topCompatible {
+		return pl.createBotOnlyForm(piece, currentStepIdx, currentStep)
+	}
+
+	return pl.createTopFormWithPossibleBot(piece, currentStepIdx, currentStep)
+}
+
+func (pl *ProcessingLine) createBotOnlyForm(
+	piece *Piece, currentStepIdx int, currentStep Transformation,
+) *processControlForm {
+	repeatBot := int16(1)
 	stepsCompleted := 1
 	intrinsicTime := currentStep.Time
 
-	queueSize := pl.getNItemsInConveyor()
-
-	if !topCompatible {
-		if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
-			intrinsicTime += MACHINE_TOOL_SWAP_TIME
-		}
-
-		return &processControlForm{
-			toolTop:    "", // No tool needed
-			processTop: false,
-
-			toolBot:    currentStep.Tool,
-			processBot: true,
-
-			pieceKind: piece.Kind,
-			id:        piece.ControlID,
-
-			// Metadata
-			stepsCompleted: 1,
-			intrinsicTime:  intrinsicTime,
-			queueSize:      queueSize,
-		}
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+		intrinsicTime += MACHINE_TOOL_SWAP_TIME
 	}
+
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
+		}
+		repeatBot++
+		stepsCompleted++
+		currentStepIdx++
+		intrinsicTime += nextStep.Time
+		currentStep = nextStep
+	}
+
+	return &processControlForm{
+		toolTop:        "", // No tool needed
+		processTop:     false,
+		repeatTop:      1,
+		toolBot:        currentStep.Tool,
+		processBot:     true,
+		repeatBot:      repeatBot,
+		pieceKind:      piece.Kind,
+		id:             piece.ControlID,
+		stepsCompleted: stepsCompleted,
+		intrinsicTime:  intrinsicTime,
+		queueSize:      pl.getNItemsInConveyor(),
+	}
+}
+
+func (pl *ProcessingLine) createTopFormWithPossibleBot(
+	piece *Piece,
+	currentStepIdx int,
+	currentStep Transformation,
+) *processControlForm {
+	repeatTop := int16(1)
+	stepsCompleted := 1
+	intrinsicTime := currentStep.Time
 
 	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M1_POS) {
 		intrinsicTime += MACHINE_TOOL_SWAP_TIME
 	}
 
-	chainSteps := false
-	toolBot := pl.currentTool(LINE_DEFAULT_M2_POS)
-	if piece.CurrentStep+1 < len(piece.Steps) {
-		nextStep := piece.Steps[piece.CurrentStep+1]
-
-		if pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, nextStep) {
-			chainSteps = true
-			stepsCompleted++
-			intrinsicTime += nextStep.Time
-			if nextStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
-				intrinsicTime += MACHINE_TOOL_SWAP_TIME
-				toolBot = nextStep.Tool
-			}
-		} else {
-			toolBot = "" // no tool needed
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
 		}
-	} else {
-		toolBot = "" // no tool needed
+		repeatTop++
+		stepsCompleted++
+		currentStepIdx++
+		intrinsicTime += nextStep.Time
+		currentStep = nextStep
 	}
+
+	toolBot, repeatBot := pl.determineToolBot(
+		piece, currentStepIdx, &intrinsicTime, &stepsCompleted,
+	)
 
 	return &processControlForm{
 		toolTop:    currentStep.Tool,
 		processTop: true,
+		repeatTop:  repeatTop,
 
 		toolBot:    toolBot,
-		processBot: chainSteps,
+		processBot: toolBot != "",
+		repeatBot:  repeatBot,
 
-		pieceKind: piece.Kind,
-		id:        piece.ControlID,
-
-		// Metadata
+		pieceKind:      piece.Kind,
+		id:             piece.ControlID,
 		stepsCompleted: stepsCompleted,
 		intrinsicTime:  intrinsicTime,
-		queueSize:      queueSize,
+		queueSize:      pl.getNItemsInConveyor(),
 	}
+}
+
+func (pl *ProcessingLine) determineToolBot(piece *Piece,
+	currentStepIdx int,
+	intrinsicTime *int,
+	stepsCompleted *int,
+) (string, int16) {
+	if currentStepIdx+1 >= len(piece.Steps) {
+		return "", 0
+	}
+	currentStep := piece.Steps[currentStepIdx+1]
+	if !pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep) {
+		return "", 0
+	}
+	currentStepIdx++
+	*stepsCompleted++
+	*intrinsicTime += currentStep.Time
+
+	repeatBot := int16(1)
+
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
+		}
+		*stepsCompleted++
+		*intrinsicTime += nextStep.Time
+		repeatBot++
+		currentStepIdx++
+		currentStep = nextStep
+	}
+
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+		*intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	}
+	return currentStep.Tool, repeatBot
 }
 
 func (pl *ProcessingLine) addItem(item *conveyorItem) {
@@ -430,13 +500,17 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 	m1 := pl.conveyorLine[LINE_DEFAULT_M1_POS].machine
 	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
 	if m1 != nil && m1Item != nil && m1Item.useM1 {
-		m1Item.handler.transformCh <- pl.id
+		for i := int16(0); i < m1Item.m1Repeats; i++ {
+			m1Item.handler.transformCh <- pl.id
+		}
 	}
 
 	m2 := pl.conveyorLine[LINE_DEFAULT_M2_POS].machine
 	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
 	if m2 != nil && m2Item != nil && m2Item.useM2 {
-		m2Item.handler.transformCh <- pl.id
+		for i := int16(0); i < m2Item.m2Repeats; i++ {
+			m2Item.handler.transformCh <- pl.id
+		}
 	}
 
 	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item

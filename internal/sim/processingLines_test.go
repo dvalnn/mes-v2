@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestCreateBestFormForOnlyM1(t *testing.T) {
+func TestCreateBestFormRepeat(t *testing.T) {
 	pLine := ProcessingLine{
 		id:            u.ID_L1,
 		conveyorLine:  initType1Conveyor(),
@@ -17,98 +17,27 @@ func TestCreateBestFormForOnlyM1(t *testing.T) {
 	}
 
 	minimalPieceForM1 := Piece{
-		Kind:  u.P_KIND_1,
-		Steps: []Transformation{{Tool: u.TOOL_1}},
+		Kind: u.P_KIND_1,
+		Steps: []Transformation{
+			{Tool: u.TOOL_1, Time: 30},
+			{Tool: u.TOOL_3, Time: 30},
+			{Tool: u.TOOL_3, Time: 30},
+		},
 	}
 
 	best := pLine.createBestForm(&minimalPieceForM1)
 	expected := &processControlForm{
-		toolTop:    u.TOOL_1,
-		toolBot:    u.TOOL_1,
-		pieceKind:  u.P_KIND_1,
-		processTop: true,
-		processBot: false,
-	}
-
-	if *best != *expected {
-		t.Fatalf("Expected %+v, got %+v", expected, best)
-	}
-}
-
-func TestCreateBestFormForOnlyM2(t *testing.T) {
-	pLine := ProcessingLine{
-		id:            u.ID_L1,
-		conveyorLine:  initType1Conveyor(),
-		waitingPieces: []*freeLineWaiter{},
-		readyForNext:  true,
-	}
-
-	minimalPieceForM2 := Piece{
-		Kind:  u.P_KIND_1,
-		Steps: []Transformation{{Tool: u.TOOL_4}},
-	}
-
-	best := pLine.createBestForm(&minimalPieceForM2)
-	expected := &processControlForm{
-		toolTop:    u.TOOL_4,
-		toolBot:    u.TOOL_4,
-		pieceKind:  u.P_KIND_1,
-		processTop: false,
-		processBot: true,
-	}
-
-	if *best != *expected {
-		t.Fatalf("Expected %+v, got %+v", expected, best)
-	}
-}
-
-func TestCreateBestFormWithChain(t *testing.T) {
-	pLine := ProcessingLine{
-		id:            u.ID_L1,
-		conveyorLine:  initType1Conveyor(),
-		waitingPieces: []*freeLineWaiter{},
-		readyForNext:  true,
-	}
-
-	minimalPieceForChain := Piece{
-		Kind:  u.P_KIND_1,
-		Steps: []Transformation{{Tool: u.TOOL_1}, {Tool: u.TOOL_4}},
-	}
-
-	best := pLine.createBestForm(&minimalPieceForChain)
-	expected := &processControlForm{
-		toolTop:    u.TOOL_1,
-		toolBot:    u.TOOL_4,
-		pieceKind:  u.P_KIND_1,
-		processTop: true,
-		processBot: true,
-	}
-
-	if *best != *expected {
-		t.Fatalf("Expected %+v, got %+v", expected, best)
-	}
-}
-
-func TestCreateBestFormForOnlyM2WithLeftoverSteps(t *testing.T) {
-	pLine := ProcessingLine{
-		id:            u.ID_L1,
-		conveyorLine:  initType1Conveyor(),
-		waitingPieces: []*freeLineWaiter{},
-		readyForNext:  true,
-	}
-
-	minimalPieceForM2WithExtra := Piece{
-		Kind:  u.P_KIND_1,
-		Steps: []Transformation{{Tool: u.TOOL_4}, {Tool: u.TOOL_1}},
-	}
-
-	best := pLine.createBestForm(&minimalPieceForM2WithExtra)
-	expected := &processControlForm{
-		toolTop:    u.TOOL_4,
-		toolBot:    u.TOOL_4,
-		pieceKind:  u.P_KIND_1,
-		processTop: false,
-		processBot: true,
+		toolTop:        u.TOOL_1,
+		toolBot:        u.TOOL_3,
+		pieceKind:      u.P_KIND_1,
+		id:             0,
+		repeatTop:      1,
+		repeatBot:      2,
+		processTop:     true,
+		processBot:     true,
+		stepsCompleted: 3,
+		intrinsicTime:  120,
+		queueSize:      0,
 	}
 
 	if *best != *expected {

@@ -60,6 +60,16 @@ func factoryStateUpdate(ctx context.Context, f *factory) error {
 		}()
 	}
 
+	for _, deliveryLine := range f.deliveryLines {
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			readResponse, err := f.plcClient.Read(deliveryLine.StateOpcuaVars(), readCtx)
+			deliveryLine.UpdateState(readResponse)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading delivery lines")
+		}()
+	}
+
 	for _, line := range f.processLines {
 		select {
 		case <-ctx.Done():
@@ -215,7 +225,9 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 		},
 		controlID: controlForm.id,
 		useM1:     controlForm.processTop,
+		m1Repeats: controlForm.repeatTop,
 		useM2:     controlForm.processBot,
+		m2Repeats: controlForm.repeatBot,
 	})
 
 	return &itemHandler{
@@ -264,7 +276,11 @@ func sendToProduction(
 }
 
 // TODO: rethink this way of handling updates
-func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
+func runFactoryStateUpdateFunc(
+	ctx context.Context,
+	shipAckCh chan<- int16,
+	deliveryAckCh chan<- int16,
+) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
@@ -274,14 +290,27 @@ func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
 
 	err := factory.stateUpdateFunc(ctx, factory)
 	utils.Assert(err == nil, "[updateFactoryState] Error updating factory state")
+
 	for _, supplyLine := range factory.supplyLines {
 		if supplyLine.PieceAcked() {
 			shipAckCh <- supplyLine.LastCommandTxId()
 		}
 	}
+
+	for _, deliveryLine := range factory.deliveryLines {
+		if deliveryLine.PieceAcked() {
+			log.Printf("[runFactoryStateUpdateFunc] Delivery %v Acked\n",
+				deliveryLine.LastCommandTxId())
+			deliveryAckCh <- deliveryLine.LastCommandTxId()
+		}
+	}
 }
 
-func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan error {
+func StartFactoryHandler(
+	ctx context.Context,
+	shipAckCh chan<- int16,
+	deliveryAckCh chan<- int16,
+) <-chan error {
 	errCh := make(chan error)
 
 	// Connect to the factory floor plcs
@@ -301,6 +330,7 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 	go func() {
 		defer close(errCh)
 		defer close(shipAckCh)
+		defer close(deliveryAckCh)
 
 		for {
 			select {
@@ -308,7 +338,7 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 				return
 
 			default:
-				runFactoryStateUpdateFunc(ctx, shipAckCh)
+				runFactoryStateUpdateFunc(ctx, shipAckCh, deliveryAckCh)
 				time.Sleep(3 * time.Second)
 			}
 		}
