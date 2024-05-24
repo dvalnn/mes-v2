@@ -18,7 +18,9 @@ func Run(ctx context.Context, simTime time.Duration) {
 	deliveryHandler := sim.StartDeliveryHandler(ctx)
 	pieceHandler := sim.StartPieceHandler(ctx)
 	shipmentHandler := sim.StartShipmentHandler(ctx, pieceHandler.WakeUpCh)
-	factoryErrorCh := sim.StartFactoryHandler(ctx, shipmentHandler.ShipAckCh)
+	factoryErrorCh := sim.StartFactoryHandler(
+		ctx, shipmentHandler.ShipAckCh, deliveryHandler.DeliveryAckCh,
+	)
 
 	defer close(shipmentHandler.ShipCh)
 	defer close(deliveryHandler.DeliveryCh)

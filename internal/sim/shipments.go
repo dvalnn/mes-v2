@@ -128,6 +128,7 @@ func StartShipmentHandler(
 								if nArrived >= shipment.NPieces {
 									break
 								}
+								log.Printf("[ShipmentHandler] Communicating with supply line %d", i)
 								material := PieceStrToInt(shipment.MaterialKind)
 								factory.supplyLines[i].NewShipment(material)
 								_, err := factory.plcClient.Write(

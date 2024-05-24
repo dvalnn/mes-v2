@@ -2,6 +2,7 @@ package sim
 
 import (
 	"context"
+	"fmt"
 	"log"
 	plc "mes/internal/net/plc"
 	"mes/internal/utils"
@@ -56,6 +57,16 @@ func factoryStateUpdate(ctx context.Context, f *factory) error {
 			readResponse, err := f.plcClient.Read(supplyLine.StateOpcuaVars(), readCtx)
 			supplyLine.UpdateState(readResponse)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading supply lines")
+		}()
+	}
+
+	for _, deliveryLine := range f.deliveryLines {
+		func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			readResponse, err := f.plcClient.Read(deliveryLine.StateOpcuaVars(), readCtx)
+			deliveryLine.UpdateState(readResponse)
+			utils.Assert(err == nil, "[factoryStateUpdate] Error reading delivery lines")
 		}()
 	}
 
@@ -147,14 +158,29 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 	}
 
 	nRegistered := 0
+	lineOffers := make(map[string]int)
 	for _, line := range factory.processLines {
 		if line.id == utils.ID_L0 {
 			continue
 		}
 
-		// The control ID does not matter in this case
-		if form := line.createBestForm(piece, 0); form != nil {
-			line.registerWaitingPiece(waiter)
+		if form := line.createBestForm(piece); form != nil {
+			score := form.metadataScore()
+			lineOffers[line.id] = score
+		}
+	}
+
+	bestScore := 9999999
+	for _, score := range lineOffers {
+		if score < bestScore {
+			bestScore = score
+		}
+	}
+
+	leniency := 0.2 // 10% leniency
+	for lineId, score := range lineOffers {
+		if (1-leniency)*float64(score) <= float64(bestScore) {
+			factory.processLines[lineId].registerWaitingPiece(waiter)
 			nRegistered++
 		}
 	}
@@ -175,16 +201,21 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	newTxId := factory.processLines[lineID].plc.LastCommandTxId() + 1
-	controlForm := factory.processLines[lineID].createBestForm(piece, newTxId)
+	piece.ControlID = factory.processLines[lineID].plc.LastCommandTxId() + 1
+	controlForm := factory.processLines[lineID].createBestForm(piece)
+	utils.Assert(controlForm != nil, "[sendToLine] controlForm is nil")
+
+	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolTop)
+	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolBot)
+
+	log.Printf("[sendToLine] line: %s processForm: %v piece: %s\n",
+		lineID, controlForm, piece.ErpIdentifier)
 	factory.processLines[lineID].plc.UpdateCommandOpcuaVars(controlForm.toCellCommand())
-	writeResponse, err := factory.plcClient.Write(factory.processLines[lineID].plc.CommandOpcuaVars(), ctx)
+	opcuavars := factory.processLines[lineID].plc.CommandOpcuaVars()
+	_, err := factory.plcClient.Write(opcuavars, ctx)
+	utils.Assert(err == nil, "[sendToLine] Error writing to PLC")
+	// log.Printf("[sendToLine] Write response: %+v", writeResponse.ResponseHeader)
 
-	log.Printf("Control Form: %+v", factory.processLines[lineID].plc.CommandOpcuaVars())
-	log.Printf("Write response: %+v", writeResponse.Results[0])
-
-	utils.Assert(err == nil, "[sendToProduction] Error writing to PLC")
-	utils.Assert(controlForm != nil, "[sendToProduction] controlForm is nil")
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
 			transformCh: transformCh,
@@ -194,7 +225,9 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 		},
 		controlID: controlForm.id,
 		useM1:     controlForm.processTop,
+		m1Repeats: controlForm.repeatTop,
 		useM2:     controlForm.processBot,
+		m2Repeats: controlForm.repeatBot,
 	})
 
 	return &itemHandler{
@@ -206,32 +239,48 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 }
 
 func sendToProduction(
-	piece Piece,
+	ctx context.Context,
+	piece *Piece,
 ) *itemHandler {
 	claimed := make(chan struct{})
 	claimPieceCh := make(chan string)
 	lock := &sync.Mutex{}
+	countLock := &sync.Mutex{}
 	waiter := &freeLineWaiter{
-		claimed:      claimed,
-		claimPieceCh: claimPieceCh,
-		claimLock:    lock,
+		pieceClaimedCh: claimed,
+		claimPieceCh:   claimPieceCh,
+		claimLock:      lock,
+		claimCount:     0,
+		claimCountLock: countLock,
 	}
 
-	registerWaitingPiece(waiter, &piece)
+	registerWaitingPiece(waiter, piece)
 
 	// Once a line is available, the check
-	line, open := <-claimPieceCh
-	close(claimed)
-	lock.Unlock()
+	select {
+	case <-ctx.Done():
+		log.Panicf("[sendToProduction] Context cancelled before piece %s was claimed",
+			piece.ErpIdentifier)
+	case line, open := <-claimPieceCh:
+		close(claimed)
+		lock.Unlock()
 
-	utils.Assert(open, "[sendToProduction] claimPieceCh closed before piece was claimed")
-	log.Printf("[sendToProduction] Piece %v claimed by line %s", piece.ErpIdentifier, line)
-
-	return sendToLine(line, &piece)
+		errorMsg := fmt.Sprintf("[sendToProduction] claimPieceCh closed before piece %s was claimed: %s",
+			piece.ErpIdentifier, line)
+		utils.Assert(open, errorMsg)
+		log.Printf("[sendToProduction] Piece %v claimed by line %s",
+			piece.ErpIdentifier, line)
+		return sendToLine(line, piece)
+	}
+	panic("unreachable")
 }
 
 // TODO: rethink this way of handling updates
-func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
+func runFactoryStateUpdateFunc(
+	ctx context.Context,
+	shipAckCh chan<- int16,
+	deliveryAckCh chan<- int16,
+) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
 
@@ -241,14 +290,27 @@ func runFactoryStateUpdateFunc(ctx context.Context, shipAckCh chan<- int16) {
 
 	err := factory.stateUpdateFunc(ctx, factory)
 	utils.Assert(err == nil, "[updateFactoryState] Error updating factory state")
+
 	for _, supplyLine := range factory.supplyLines {
 		if supplyLine.PieceAcked() {
 			shipAckCh <- supplyLine.LastCommandTxId()
 		}
 	}
+
+	for _, deliveryLine := range factory.deliveryLines {
+		if deliveryLine.PieceAcked() {
+			log.Printf("[runFactoryStateUpdateFunc] Delivery %v Acked\n",
+				deliveryLine.LastCommandTxId())
+			deliveryAckCh <- deliveryLine.LastCommandTxId()
+		}
+	}
 }
 
-func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan error {
+func StartFactoryHandler(
+	ctx context.Context,
+	shipAckCh chan<- int16,
+	deliveryAckCh chan<- int16,
+) <-chan error {
 	errCh := make(chan error)
 
 	// Connect to the factory floor plcs
@@ -256,7 +318,11 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 		factory, mutex := getFactoryInstance()
 		defer mutex.Unlock()
 
-		err := factory.plcClient.Connect(ctx)
+		connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		err := factory.plcClient.Connect(connectCtx)
+		log.Printf("[StartFactoryHandler] Connected to factory floor")
 		utils.Assert(err == nil, "[StartFactoryHandler] Error connecting to factory floor")
 	}()
 
@@ -264,6 +330,7 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 	go func() {
 		defer close(errCh)
 		defer close(shipAckCh)
+		defer close(deliveryAckCh)
 
 		for {
 			select {
@@ -271,7 +338,7 @@ func StartFactoryHandler(ctx context.Context, shipAckCh chan<- int16) <-chan err
 				return
 
 			default:
-				runFactoryStateUpdateFunc(ctx, shipAckCh)
+				runFactoryStateUpdateFunc(ctx, shipAckCh, deliveryAckCh)
 				time.Sleep(3 * time.Second)
 			}
 		}

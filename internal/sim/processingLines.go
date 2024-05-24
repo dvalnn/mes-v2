@@ -7,8 +7,9 @@ import (
 )
 
 type Machine struct {
-	name  string
-	tools []string
+	name         string
+	selectedTool string
+	tools        []string
 }
 
 // For the inner logic
@@ -31,6 +32,8 @@ type itemHandler struct {
 type conveyorItem struct {
 	handler   *conveyorItemHandler
 	controlID int16
+	m1Repeats int16
+	m2Repeats int16
 	useM1     bool
 	useM2     bool
 }
@@ -44,13 +47,21 @@ func initType1Conveyor() []Conveyor {
 	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
 	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M1", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
+		item: nil,
+		machine: &Machine{
+			name:         "M1",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_2, u.TOOL_3},
+		},
 	}
 
 	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M2", tools: []string{u.TOOL_1, u.TOOL_2, u.TOOL_3}},
+		item: nil,
+		machine: &Machine{
+			name:         "M2",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_2, u.TOOL_3},
+		},
 	}
 
 	return conveyor
@@ -60,13 +71,21 @@ func initType2Conveyor() []Conveyor {
 	conveyor := make([]Conveyor, LINE_CONVEYOR_SIZE)
 
 	conveyor[LINE_DEFAULT_M1_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M3", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_5}},
+		item: nil,
+		machine: &Machine{
+			name:         "M3",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_4, u.TOOL_5},
+		},
 	}
 
 	conveyor[LINE_DEFAULT_M2_POS] = Conveyor{
-		item:    nil,
-		machine: &Machine{name: "M4", tools: []string{u.TOOL_1, u.TOOL_4, u.TOOL_6}},
+		item: nil,
+		machine: &Machine{
+			name:         "M4",
+			selectedTool: u.TOOL_1,
+			tools:        []string{u.TOOL_1, u.TOOL_4, u.TOOL_6},
+		},
 	}
 
 	return conveyor
@@ -82,12 +101,33 @@ type ProcessingLine struct {
 }
 
 type processControlForm struct {
+	// Fields to control the plc
 	toolTop    string
 	toolBot    string
 	pieceKind  string
 	id         int16
+	repeatTop  int16
+	repeatBot  int16
 	processTop bool
 	processBot bool
+
+	// Metadata for decision making in the MES simulation
+
+	// Number of steps completed for this command (0-based) out of the total
+	// steps in the piece's recipe
+	stepsCompleted int
+	// Time needed to process this command to completion (in seconds)
+	// assuming no delays (e.g. waiting for a machine to be free)
+	intrinsicTime int
+	// Time needed to process this command to completion (in seconds)
+	// taking into account possible delays in queue
+	queueSize int
+}
+
+func (pcf *processControlForm) metadataScore() int {
+	return pcf.intrinsicTime*TIME_WEIGHT +
+		pcf.queueSize*QUEUE_WEIGHT +
+		(3-pcf.stepsCompleted)*STEP_WEIGHT
 }
 
 func ToolStrToInt(s string) int16 {
@@ -136,30 +176,53 @@ func PieceStrToInt(s string) int16 {
 
 func (pcf *processControlForm) toCellCommand() *plc.CellCommand {
 	return &plc.CellCommand{
-		TxId:       plc.OpcuaInt16{Value: pcf.id},
-		PieceKind:  plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
-		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
+		TxId:      plc.OpcuaInt16{Value: pcf.id},
+		PieceKind: plc.OpcuaInt16{Value: PieceStrToInt(pcf.pieceKind)},
+
 		ProcessTop: plc.OpcuaBool{Value: pcf.processTop},
-		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
 		ToolTop:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolTop)},
+		RepeatTop:  plc.OpcuaInt16{Value: pcf.repeatTop},
+
+		ProcessBot: plc.OpcuaBool{Value: pcf.processBot},
+		ToolBot:    plc.OpcuaInt16{Value: ToolStrToInt(pcf.toolBot)},
+		RepeatBot:  plc.OpcuaInt16{Value: pcf.repeatBot},
 	}
 }
 
 type freeLineWaiter struct {
-	claimed      <-chan struct{}
-	claimPieceCh chan<- string
-	claimLock    *sync.Mutex
+	pieceClaimedCh <-chan struct{}
+	claimPieceCh   chan<- string
+	claimLock      *sync.Mutex
+	claimCountLock *sync.Mutex
+	claimCount     int
+}
+
+func (flw *freeLineWaiter) incrementClaimCount() {
+	flw.claimCountLock.Lock()
+	flw.claimCount++
+	flw.claimCountLock.Unlock()
+}
+
+func (flw *freeLineWaiter) decrementClaimCount() {
+	flw.claimCountLock.Lock()
+	flw.claimCount--
+	flw.claimCountLock.Unlock()
+
+	u.Assert(flw.claimCount >= 0,
+		"[freeLineWaiter.decrementClaimCount] claimCount is not positive")
 }
 
 func (pl *ProcessingLine) registerWaitingPiece(w *freeLineWaiter) {
 	pl.waitingPieces = append(pl.waitingPieces, w)
+	w.incrementClaimCount()
 }
 
 func (pl *ProcessingLine) pruneDeadWaiters() {
 	aliveWaiters := make([]*freeLineWaiter, 0, len(pl.waitingPieces))
 	for _, w := range pl.waitingPieces {
 		select {
-		case <-w.claimed:
+		case <-w.pieceClaimedCh:
+			w.decrementClaimCount()
 		default:
 			aliveWaiters = append(aliveWaiters, w)
 		}
@@ -176,21 +239,24 @@ loop:
 	for _, w := range pl.waitingPieces {
 		w.claimLock.Lock()
 		select {
-		case <-w.claimed:
+		case <-w.pieceClaimedCh:
 			w.claimLock.Unlock()
 		default:
 			w.claimPieceCh <- pl.id
 			close(w.claimPieceCh)
 			// HACK:
 			// not unlocking here on purpose, so that the piece handler
-			// can unlock it after the claimed ch is properly closed
+			// can unlock it after the pieceClaimedCh is closed, to avoid
+			// double closing or closing while another goroutine is trying to
+			// claim the same piece
 			break loop
 		}
 	}
 }
 
-func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation) bool {
+func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t Transformation) bool {
 	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.isMachineCompatibleWith] machine is null")
 
 	for _, tool := range m.tools {
 		if tool == t.Tool {
@@ -200,49 +266,186 @@ func (pl *ProcessingLine) isMachineCompatibleWith(mIndex int, t *Transformation)
 	return false
 }
 
-func (pl *ProcessingLine) createBestForm(piece *Piece, id int16) *processControlForm {
+func (pl *ProcessingLine) currentTool(mIndex int) string {
+	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.currentTool] machine is null")
+	return m.selectedTool
+}
+
+func (pl *ProcessingLine) setCurrentTool(mIndex int, tool string) {
+	// Line 0 has no machines
+	if pl.id == u.ID_L0 {
+		return
+	}
+
+	if tool == "" {
+		return // No tool change
+	}
+
+	m := pl.conveyorLine[mIndex].machine
+	u.Assert(m != nil, "[ProcessingLine.currentTool] machine is null")
+	for _, t := range m.tools {
+		if t == tool {
+			m.selectedTool = tool
+			return
+		}
+	}
+	panic("[ProcessingLine.setCurrentTool] Tool not found in machine")
+}
+
+func (pl *ProcessingLine) getNItemsInConveyor() int {
+	nItemsInQueue := 0
+	for _, conveyor := range pl.conveyorLine {
+		if conveyor.item != nil {
+			nItemsInQueue++
+		}
+	}
+	return nItemsInQueue
+}
+
+func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 	if pl.id == u.ID_L0 {
 		return &processControlForm{
 			pieceKind: piece.Kind,
-			id:        id,
+			id:        piece.ControlID,
 		}
 	}
 
-	currentStep := piece.Steps[piece.CurrentStep]
-	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, &currentStep)
-	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &currentStep)
+	currentStepIdx := piece.CurrentStep
+	currentStep := piece.Steps[currentStepIdx]
+
+	topCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M1_POS, currentStep)
+	botCompatible := pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep)
+
 	if !topCompatible && !botCompatible {
 		return nil
 	}
 
-	if topCompatible {
-		chainSteps := false
-		toolBot := currentStep.Tool // Doesn't matter if there is no step chain
+	if !topCompatible {
+		return pl.createBotOnlyForm(piece, currentStepIdx, currentStep)
+	}
 
-		if piece.CurrentStep+1 < len(piece.Steps) {
-			nextStep := piece.Steps[piece.CurrentStep+1]
-			toolBot = nextStep.Tool
-			chainSteps = pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, &nextStep)
-		}
+	return pl.createTopFormWithPossibleBot(piece, currentStepIdx, currentStep)
+}
 
-		return &processControlForm{
-			toolTop:    currentStep.Tool,
-			toolBot:    toolBot,
-			pieceKind:  piece.Kind,
-			id:         id,
-			processTop: true,
-			processBot: chainSteps,
+func (pl *ProcessingLine) createBotOnlyForm(
+	piece *Piece, currentStepIdx int, currentStep Transformation,
+) *processControlForm {
+	repeatBot := int16(1)
+	stepsCompleted := 1
+	intrinsicTime := currentStep.Time
+
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	}
+
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
 		}
+		repeatBot++
+		stepsCompleted++
+		currentStepIdx++
+		intrinsicTime += nextStep.Time
+		currentStep = nextStep
 	}
 
 	return &processControlForm{
-		toolTop:    currentStep.Tool,
-		toolBot:    currentStep.Tool,
-		pieceKind:  piece.Kind,
-		id:         id,
-		processTop: false,
-		processBot: true,
+		toolTop:        "", // No tool needed
+		processTop:     false,
+		repeatTop:      1,
+		toolBot:        currentStep.Tool,
+		processBot:     true,
+		repeatBot:      repeatBot,
+		pieceKind:      piece.Kind,
+		id:             piece.ControlID,
+		stepsCompleted: stepsCompleted,
+		intrinsicTime:  intrinsicTime,
+		queueSize:      pl.getNItemsInConveyor(),
 	}
+}
+
+func (pl *ProcessingLine) createTopFormWithPossibleBot(
+	piece *Piece,
+	currentStepIdx int,
+	currentStep Transformation,
+) *processControlForm {
+	repeatTop := int16(1)
+	stepsCompleted := 1
+	intrinsicTime := currentStep.Time
+
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M1_POS) {
+		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	}
+
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
+		}
+		repeatTop++
+		stepsCompleted++
+		currentStepIdx++
+		intrinsicTime += nextStep.Time
+		currentStep = nextStep
+	}
+
+	toolBot, repeatBot := pl.determineToolBot(
+		piece, currentStepIdx, &intrinsicTime, &stepsCompleted,
+	)
+
+	return &processControlForm{
+		toolTop:    currentStep.Tool,
+		processTop: true,
+		repeatTop:  repeatTop,
+
+		toolBot:    toolBot,
+		processBot: toolBot != "",
+		repeatBot:  repeatBot,
+
+		pieceKind:      piece.Kind,
+		id:             piece.ControlID,
+		stepsCompleted: stepsCompleted,
+		intrinsicTime:  intrinsicTime,
+		queueSize:      pl.getNItemsInConveyor(),
+	}
+}
+
+func (pl *ProcessingLine) determineToolBot(piece *Piece,
+	currentStepIdx int,
+	intrinsicTime *int,
+	stepsCompleted *int,
+) (string, int16) {
+	if currentStepIdx+1 >= len(piece.Steps) {
+		return "", 0
+	}
+	currentStep := piece.Steps[currentStepIdx+1]
+	if !pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep) {
+		return "", 0
+	}
+	currentStepIdx++
+	*stepsCompleted++
+	*intrinsicTime += currentStep.Time
+
+	repeatBot := int16(1)
+
+	for currentStepIdx+1 < len(piece.Steps) {
+		nextStep := piece.Steps[currentStepIdx+1]
+		if currentStep.Tool != nextStep.Tool {
+			break
+		}
+		*stepsCompleted++
+		*intrinsicTime += nextStep.Time
+		repeatBot++
+		currentStepIdx++
+		currentStep = nextStep
+	}
+
+	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
+		*intrinsicTime += MACHINE_TOOL_SWAP_TIME
+	}
+	return currentStep.Tool, repeatBot
 }
 
 func (pl *ProcessingLine) addItem(item *conveyorItem) {
@@ -297,13 +500,17 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 	m1 := pl.conveyorLine[LINE_DEFAULT_M1_POS].machine
 	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
 	if m1 != nil && m1Item != nil && m1Item.useM1 {
-		m1Item.handler.transformCh <- pl.id
+		for i := int16(0); i < m1Item.m1Repeats; i++ {
+			m1Item.handler.transformCh <- pl.id
+		}
 	}
 
 	m2 := pl.conveyorLine[LINE_DEFAULT_M2_POS].machine
 	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
 	if m2 != nil && m2Item != nil && m2Item.useM2 {
-		m2Item.handler.transformCh <- pl.id
+		for i := int16(0); i < m2Item.m2Repeats; i++ {
+			m2Item.handler.transformCh <- pl.id
+		}
 	}
 
 	outItem := pl.conveyorLine[LINE_CONVEYOR_SIZE-1].item
