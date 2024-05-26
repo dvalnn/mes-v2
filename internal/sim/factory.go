@@ -177,7 +177,7 @@ func registerWaitingPiece(waiter *freeLineWaiter, piece *Piece) {
 		}
 	}
 
-	leniency := 0.2 // 10% leniency
+	leniency := 0.2 // 20% leniency
 	for lineId, score := range lineOffers {
 		if (1-leniency)*float64(score) <= float64(bestScore) {
 			factory.processLines[lineId].registerWaitingPiece(waiter)
@@ -214,7 +214,6 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	opcuavars := factory.processLines[lineID].plc.CommandOpcuaVars()
 	_, err := factory.plcClient.Write(opcuavars, ctx)
 	utils.Assert(err == nil, "[sendToLine] Error writing to PLC")
-	// log.Printf("[sendToLine] Write response: %+v", writeResponse.ResponseHeader)
 
 	factory.processLines[lineID].addItem(&conveyorItem{
 		handler: &conveyorItemHandler{
@@ -224,10 +223,13 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 			errCh:       errCh,
 		},
 		controlID: controlForm.id,
-		useM1:     controlForm.processTop,
 		m1Repeats: controlForm.repeatTop,
-		useM2:     controlForm.processBot,
 		m2Repeats: controlForm.repeatBot,
+		useM1:     controlForm.processTop,
+		useM2:     controlForm.processBot,
+
+		toolChangeM1: controlForm.changeM1,
+		toolChangeM2: controlForm.changeM2,
 	})
 
 	return &itemHandler{

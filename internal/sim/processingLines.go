@@ -3,6 +3,7 @@ package sim
 import (
 	plc "mes/internal/net/plc"
 	u "mes/internal/utils"
+	"strconv"
 	"sync"
 )
 
@@ -36,6 +37,10 @@ type conveyorItem struct {
 	m2Repeats int16
 	useM1     bool
 	useM2     bool
+
+	// Metadata for the erp
+	toolChangeM1 bool
+	toolChangeM2 bool
 }
 
 type Conveyor struct {
@@ -122,6 +127,10 @@ type processControlForm struct {
 	// Time needed to process this command to completion (in seconds)
 	// taking into account possible delays in queue
 	queueSize int
+
+	// Whether or not a tool change is needed
+	changeM1 bool
+	changeM2 bool
 }
 
 func (pcf *processControlForm) metadataScore() int {
@@ -335,8 +344,10 @@ func (pl *ProcessingLine) createBotOnlyForm(
 	stepsCompleted := 1
 	intrinsicTime := currentStep.Time
 
+	changeM2 := false
 	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
 		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+		changeM2 = true
 	}
 
 	for currentStepIdx+1 < len(piece.Steps) {
@@ -352,17 +363,22 @@ func (pl *ProcessingLine) createBotOnlyForm(
 	}
 
 	return &processControlForm{
-		toolTop:        "", // No tool needed
-		processTop:     false,
-		repeatTop:      1,
-		toolBot:        currentStep.Tool,
-		processBot:     true,
-		repeatBot:      repeatBot,
-		pieceKind:      piece.Kind,
-		id:             piece.ControlID,
+		id:        piece.ControlID,
+		pieceKind: piece.Kind,
+
+		processTop: false,
+		toolTop:    "",
+		repeatTop:  1,
+
+		toolBot:    currentStep.Tool,
+		repeatBot:  repeatBot,
+		processBot: true,
+
 		stepsCompleted: stepsCompleted,
 		intrinsicTime:  intrinsicTime,
 		queueSize:      pl.getNItemsInConveyor(),
+		changeM1:       false,
+		changeM2:       changeM2,
 	}
 }
 
@@ -375,8 +391,10 @@ func (pl *ProcessingLine) createTopFormWithPossibleBot(
 	stepsCompleted := 1
 	intrinsicTime := currentStep.Time
 
+	changeM1 := false
 	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M1_POS) {
 		intrinsicTime += MACHINE_TOOL_SWAP_TIME
+		changeM1 = true
 	}
 
 	for currentStepIdx+1 < len(piece.Steps) {
@@ -391,11 +409,14 @@ func (pl *ProcessingLine) createTopFormWithPossibleBot(
 		currentStep = nextStep
 	}
 
-	toolBot, repeatBot := pl.determineToolBot(
+	toolBot, repeatBot, changeM2 := pl.determineToolBot(
 		piece, currentStepIdx, &intrinsicTime, &stepsCompleted,
 	)
 
 	return &processControlForm{
+		id:        piece.ControlID,
+		pieceKind: piece.Kind,
+
 		toolTop:    currentStep.Tool,
 		processTop: true,
 		repeatTop:  repeatTop,
@@ -404,11 +425,11 @@ func (pl *ProcessingLine) createTopFormWithPossibleBot(
 		processBot: toolBot != "",
 		repeatBot:  repeatBot,
 
-		pieceKind:      piece.Kind,
-		id:             piece.ControlID,
 		stepsCompleted: stepsCompleted,
 		intrinsicTime:  intrinsicTime,
 		queueSize:      pl.getNItemsInConveyor(),
+		changeM1:       changeM1,
+		changeM2:       changeM2,
 	}
 }
 
@@ -416,13 +437,13 @@ func (pl *ProcessingLine) determineToolBot(piece *Piece,
 	currentStepIdx int,
 	intrinsicTime *int,
 	stepsCompleted *int,
-) (string, int16) {
+) (string, int16, bool) {
 	if currentStepIdx+1 >= len(piece.Steps) {
-		return "", 0
+		return "", 0, false
 	}
 	currentStep := piece.Steps[currentStepIdx+1]
 	if !pl.isMachineCompatibleWith(LINE_DEFAULT_M2_POS, currentStep) {
-		return "", 0
+		return "", 0, false
 	}
 	currentStepIdx++
 	*stepsCompleted++
@@ -442,10 +463,12 @@ func (pl *ProcessingLine) determineToolBot(piece *Piece,
 		currentStep = nextStep
 	}
 
+	changeM2 := false
 	if currentStep.Tool != pl.currentTool(LINE_DEFAULT_M2_POS) {
 		*intrinsicTime += MACHINE_TOOL_SWAP_TIME
+		changeM2 = true
 	}
-	return currentStep.Tool, repeatBot
+	return currentStep.Tool, repeatBot, changeM2
 }
 
 func (pl *ProcessingLine) addItem(item *conveyorItem) {
@@ -501,7 +524,8 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 	m1Item := pl.conveyorLine[LINE_DEFAULT_M1_POS].item
 	if m1 != nil && m1Item != nil && m1Item.useM1 {
 		for i := int16(0); i < m1Item.m1Repeats; i++ {
-			m1Item.handler.transformCh <- pl.id
+			m1Item.handler.transformCh <- pl.id + "," + m1.name + "," +
+				strconv.FormatBool(m1Item.toolChangeM1)
 		}
 	}
 
@@ -509,7 +533,8 @@ func (pl *ProcessingLine) progressConveyor() int16 {
 	m2Item := pl.conveyorLine[LINE_DEFAULT_M2_POS].item
 	if m2 != nil && m2Item != nil && m2Item.useM2 {
 		for i := int16(0); i < m2Item.m2Repeats; i++ {
-			m2Item.handler.transformCh <- pl.id
+			m2Item.handler.transformCh <- pl.id + "," + m2.name + "," +
+				strconv.FormatBool(m2Item.toolChangeM2)
 		}
 	}
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,17 +24,25 @@ type TransfCompletionForm struct {
 	MaterialID       string
 	ProductID        string
 	LineID           string
+	MachineID        string
 	TransformationID int
 	TimeTaken        int
+	ToolChange       bool
 }
 
 func (t *TransfCompletionForm) Post(ctx context.Context) error {
+	total_time := t.TimeTaken
+	if t.ToolChange {
+		total_time += MACHINE_TOOL_SWAP_TIME
+	}
+
 	data := url.Values{
 		"transf_id":   {strconv.Itoa(t.TransformationID)},
 		"material_id": {t.MaterialID},
 		"product_id":  {t.ProductID},
 		"line_id":     {t.LineID},
-		"time_taken":  {strconv.Itoa(t.TimeTaken)},
+		"machine_id":  {t.MachineID},
+		"time_taken":  {strconv.Itoa(total_time)},
 	}
 
 	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_TRANSFORMATION)
@@ -54,11 +63,15 @@ type Transformation struct {
 	Time         int    `json:"operation_time"`
 }
 
-func (t *Transformation) Complete(lineID string) *TransfCompletionForm {
+func (t *Transformation) Complete(
+	lineID string, machineID string, toolChange bool,
+) *TransfCompletionForm {
 	return &TransfCompletionForm{
 		MaterialID:       t.MaterialID,
 		ProductID:        t.ProductID,
 		LineID:           lineID,
+		MachineID:        machineID,
+		ToolChange:       toolChange,
 		TransformationID: t.ID,
 		TimeTaken:        t.Time,
 	}
@@ -100,7 +113,9 @@ func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
 	}
 }
 
-func (p *Piece) transform(lineID string) *TransfCompletionForm {
+func (p *Piece) transform(
+	lineID string, machineID string, toolChange bool,
+) *TransfCompletionForm {
 	u.Assert(
 		p.CurrentStep+1 <= len(p.Steps),
 		"Piece current step exceeds steps length",
@@ -108,7 +123,7 @@ func (p *Piece) transform(lineID string) *TransfCompletionForm {
 
 	p.Kind = p.Steps[p.CurrentStep].ProductKind
 	p.ErpIdentifier = p.Steps[p.CurrentStep].ProductID
-	completed := p.Steps[p.CurrentStep].Complete(lineID)
+	completed := p.Steps[p.CurrentStep].Complete(lineID, machineID, toolChange)
 	p.CurrentStep++
 
 	return completed
@@ -245,12 +260,18 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						line,
 					)
 
-				case line, open := <-handler.transformCh:
+				case lineData, open := <-handler.transformCh:
 					nextState = "lineExitCh"
 
 					u.Assert(open, "[PieceHandler] transformCh closed")
 
-					err := piece.transform(line).Post(ctx)
+					parts := strings.Split(lineData, ",")
+					u.Assert(len(parts) == 3, "Invalid lineData format")
+					line, machine := parts[0], parts[1]
+					toolChange, err := strconv.ParseBool(parts[2])
+					u.Assert(err == nil, "Invalid tool change format")
+
+					err = piece.transform(line, machine, toolChange).Post(ctx)
 					if err != nil {
 						errCh <- fmt.Errorf(
 							"[PieceHandler] Piece %s failed to post completion: %w",
@@ -259,8 +280,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						)
 					}
 					log.Printf(
-						"[PieceHandler] Piece %v transformed at line %v (step %d of %d)\n",
-						piece.ErpIdentifier, line, piece.CurrentStep, len(piece.Steps))
+						"[PieceHandler] Piece %v transformed at line %s, by machine %s (step %d of %d)\n",
+						piece.ErpIdentifier, line, machine, piece.CurrentStep, len(piece.Steps))
 
 				case line, open := <-handler.lineExitCh:
 					nextState = "lineEntry"

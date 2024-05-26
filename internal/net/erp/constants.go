@@ -3,7 +3,7 @@ package erp
 import "time"
 
 const (
-	ENDPOINT_NEW_DATE          = "/date"
+	ENDPOINT_DATE              = "/date"
 	ENDPOINT_WAREHOUSE         = "/warehouse"
 	ENDPOINT_SHIPMENT_ARRIVAL  = "/materials/arrivals"
 	ENDPOINT_EXPECTED_SHIPMENT = "/materials/expected"

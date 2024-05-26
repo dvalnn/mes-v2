@@ -2,6 +2,8 @@ package sim
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"mes/internal/net/erp"
 	"net/url"
@@ -11,7 +13,7 @@ import (
 )
 
 type DateForm struct {
-	Day uint
+	Day uint `json:"day"`
 }
 
 func (d *DateForm) post(ctx context.Context) error {
@@ -19,16 +21,48 @@ func (d *DateForm) post(ctx context.Context) error {
 		"day": {strconv.Itoa(int(d.Day))},
 	}
 
-	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_NEW_DATE)
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_DATE)
 	return erp.Post(ctx, config, data)
+}
+
+func getDate(ctx context.Context) (DateForm, error) {
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_DATE)
+	resp, err := erp.Get(ctx, config)
+	if err != nil {
+		return DateForm{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return DateForm{}, fmt.Errorf("[getDate] unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Parse the response body to get the current date.
+	// The response body is expected to be a JSON object with a single key "day"
+	// and a value that is the current day as an integer.
+	// For example: {"day": 1}
+
+	var date DateForm
+	if err := json.NewDecoder(resp.Body).Decode(&date); err != nil {
+		return DateForm{}, fmt.Errorf("[getDate] failed to unmarshal response: %w", err)
+	}
+
+	return date, nil
 }
 
 func DateCounter(ctx context.Context, sleepPeriod time.Duration) <-chan DateForm {
 	dateCh := make(chan DateForm)
+
+	initialDate, err := getDate(ctx)
+	if err != nil {
+		log.Printf("[DateCounter] failed to get initial date from the ERP: %v\n", err)
+		initialDate = DateForm{Day: 1}
+	}
+
 	go func() {
 		defer close(dateCh)
 
-		date := DateForm{3}
+		date := initialDate
 		dateCh <- date
 
 		sleeper := time.NewTimer(sleepPeriod)
