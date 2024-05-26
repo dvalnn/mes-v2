@@ -1,7 +1,10 @@
 package plc
 
+import "time"
+
 const (
-	OPCUA_ENDPOINT = "opc.tcp://127.0.0.1:4840"
+	OPCUA_ENDPOINT        = "opc.tcp://127.0.0.1:4840"
+	DEFAULT_OPCUA_TIMEOUT = 5 * time.Second
 
 	CODESYS_PATH = "ns=4;s=|var|CODESYS Control Win V3 x64.Application."
 	GVL_PATH     = CODESYS_PATH + "GVL."

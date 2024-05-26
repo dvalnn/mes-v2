@@ -12,5 +12,5 @@ const (
 	ENDPOINT_DELIVERY          = "/deliveries"
 
 	ENDPOINT_DEFAULT_BASE_URL = "http://localhost:8080"
-	DEFAULT_HTTP_TIMEOUT      = 500 * time.Millisecond
+	DEFAULT_HTTP_TIMEOUT      = 5 * time.Second
 )

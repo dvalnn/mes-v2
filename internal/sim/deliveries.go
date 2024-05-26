@@ -11,7 +11,6 @@ import (
 	u "mes/internal/utils"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 type Delivery struct {
@@ -127,7 +126,7 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 						factory, mutex := getFactoryInstance()
 						defer mutex.Unlock()
 
-						writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+						writeCtx, cancel := context.WithTimeout(ctx, plc.DEFAULT_OPCUA_TIMEOUT)
 						defer cancel()
 
 						for i := 0; i < neededLines; i++ {
