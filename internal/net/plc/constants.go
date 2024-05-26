@@ -1,7 +1,7 @@
 package plc
 
 const (
-	OPCUA_ENDPOINT = "opc.tcp://192.168.1.4:4840"
+	OPCUA_ENDPOINT = "opc.tcp://127.0.0.1:4840"
 
 	CODESYS_PATH = "ns=4;s=|var|CODESYS Control Win V3 x64.Application."
 	GVL_PATH     = CODESYS_PATH + "GVL."

@@ -64,7 +64,6 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 	deliveryAckCh := make(chan int16, plc.NUMBER_OF_OUTPUTS+1)
 	freeLines := [plc.NUMBER_OF_OUTPUTS]bool{true, true, true, true}
 	errCh := make(chan error)
-
 	queuedDeliveries := make(map[int16]Delivery)
 
 	go func() {
@@ -76,16 +75,24 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 			case <-ctx.Done():
 				return
 
-			case deliveryTxID := <-deliveryAckCh:
-				delivery, ok := queuedDeliveries[deliveryTxID]
-				u.Assert(ok, "[DeliveryHandler] Delivery not found for confirmation")
+			case lineIdx := <-deliveryAckCh:
+				delivery, ok := queuedDeliveries[lineIdx]
+				if !ok {
+					log.Printf("[DeliveryHandler] Delivery not found for confirmation\n")
+					continue
+				}
+				// u.Assert(ok, "[DeliveryHandler] Delivery not found for confirmation")
+				func() {
+					defer delete(queuedDeliveries, lineIdx)
 
-				err := delivery.PostConfirmation(ctx)
-				u.Assert(err == nil, "[DeliveryHandler] Error confirming delivery")
+					for i := 0; i < len(freeLines); i++ {
+						err := delivery.PostConfirmation(ctx)
+						u.Assert(err == nil, "[DeliveryHandler] Error confirming delivery")
 
-				log.Printf("[DeliveryHandler] Delivery %v confirmed to ERP\n", delivery.ID)
-				freeLines[delivery.line] = true
-				delete(queuedDeliveries, deliveryTxID)
+						log.Printf("[DeliveryHandler] Delivery %v confirmed to ERP\n", delivery.ID)
+						freeLines[delivery.line] = true
+					}
+				}()
 
 			case deliveries := <-deliveryCh:
 				log.Printf("[DeliveryHandler] Received %d new deliveries\n", len(deliveries))
@@ -125,6 +132,10 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 
 						for i := 0; i < neededLines; i++ {
 							for lIdx, line := range factory.deliveryLines {
+								if piecesRemaining == 0 {
+									break
+								}
+
 								if !freeLines[lIdx] {
 									continue
 								}
@@ -139,15 +150,10 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 								line.SetDelivery(int16(quantity), PieceStrToInt(delivery.Piece))
 								log.Printf("[DeliveryHandler] Delivering %d pieces of type %v to line %d\n",
 									quantity, delivery.Piece, lIdx)
-								log.Printf("[DeliveryHandler] %v\n", delivery)
 								_, err := factory.plcClient.Write(line.CommandOpcuaVars(), writeCtx)
 								u.Assert(err == nil, "[DeliveryHandler] Error writing to delivery line")
 								freeLines[lIdx] = false
 								queuedDeliveries[line.LastCommandTxId()] = delivery
-
-								if piecesRemaining == 0 {
-									break
-								}
 							}
 							u.Assert(piecesRemaining == 0, "[DeliveryHandler] Wrong number of pieces delivered")
 						}
