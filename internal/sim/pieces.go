@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"mes/internal/net/erp"
-	u "mes/internal/utils"
+	"mes/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -87,8 +87,8 @@ type Piece struct {
 }
 
 func (p *Piece) exitToProdLine(lineID string) *WarehouseExitForm {
-	codition := (p.Location == u.ID_W2 && lineID == u.ID_L0) || p.Location == u.ID_W1
-	u.Assert(codition, "Piece not in correct warehouse before exiting to line")
+	codition := (p.Location == utils.ID_W2 && lineID == utils.ID_L0) || p.Location == utils.ID_W1
+	utils.Assert(codition, "Piece not in correct warehouse before exiting to line")
 
 	p.Location = lineID
 	return &WarehouseExitForm{
@@ -98,13 +98,13 @@ func (p *Piece) exitToProdLine(lineID string) *WarehouseExitForm {
 }
 
 func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
-	condition := (p.Location == u.ID_L0 && warehouseID == u.ID_W1) || warehouseID == u.ID_W2
+	condition := (p.Location == utils.ID_L0 && warehouseID == utils.ID_W1) || warehouseID == utils.ID_W2
 	msg := fmt.Sprintf(
 		"Piece %s not in correct line before entering to warehouse %s",
 		p.ErpIdentifier,
 		warehouseID,
 	)
-	u.Assert(condition, msg)
+	utils.Assert(condition, msg)
 
 	p.Location = warehouseID
 	return &WarehouseEntryForm{
@@ -116,7 +116,7 @@ func (p *Piece) enterWarehouse(warehouseID string) *WarehouseEntryForm {
 func (p *Piece) transform(
 	lineID string, machineID string, toolChange bool,
 ) *TransfCompletionForm {
-	u.Assert(
+	utils.Assert(
 		p.CurrentStep+1 <= len(p.Steps),
 		"Piece current step exceeds steps length",
 	)
@@ -156,7 +156,7 @@ func GetPieces(ctx context.Context, quantity uint) ([]Piece, error) {
 		initStep := pieceRecipes[idx].Steps[0]
 		pieceRecipes[idx].Kind = initStep.MaterialKind
 		pieceRecipes[idx].ErpIdentifier = initStep.MaterialID
-		pieceRecipes[idx].Location = u.ID_W1
+		pieceRecipes[idx].Location = utils.ID_W1
 	}
 
 	return pieceRecipes, nil
@@ -168,20 +168,20 @@ type PieceHandler struct {
 }
 
 func (p *Piece) validateCompletion() {
-	u.Assert(
+	utils.Assert(
 		p.CurrentStep == len(p.Steps),
 		"[PieceHandler] Not all steps completed for piece",
 	)
-	u.Assert(
-		p.Location == u.ID_W2,
+	utils.Assert(
+		p.Location == utils.ID_W2,
 		"[PieceHandler] Piece location not W2 after completion",
 	)
 	lastStep := p.Steps[len(p.Steps)-1]
-	u.Assert(
+	utils.Assert(
 		p.ErpIdentifier == lastStep.ProductID,
 		"[PieceHandler] Piece ID not the same as the last step product ID",
 	)
-	u.Assert(
+	utils.Assert(
 		p.Kind == lastStep.ProductKind,
 		"[PieceHandler] Piece kind not the same as the last step product kind",
 	)
@@ -235,7 +235,7 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					continue StepLoop // restart the loop, register again
 
 				case err, open := <-handler.errCh:
-					u.Assert(open, "[PieceHandler] error channel closed")
+					utils.Assert(open, "[PieceHandler] error channel closed")
 					errCh <- fmt.Errorf("[PieceHandler] %w", err)
 
 				case <-ctx.Done():
@@ -245,7 +245,7 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 				case line, open := <-handler.lineEntryCh:
 					nextState = "transform"
 
-					u.Assert(open, "[PieceHandler] lineEntryCh closed")
+					utils.Assert(open, "[PieceHandler] lineEntryCh closed")
 
 					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
 						errCh <- fmt.Errorf(
@@ -263,13 +263,13 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 				case lineData, open := <-handler.transformCh:
 					nextState = "lineExitCh"
 
-					u.Assert(open, "[PieceHandler] transformCh closed")
+					utils.Assert(open, "[PieceHandler] transformCh closed")
 
 					parts := strings.Split(lineData, ",")
-					u.Assert(len(parts) == 3, "Invalid lineData format")
+					utils.Assert(len(parts) == 3, "Invalid lineData format")
 					line, machine := parts[0], parts[1]
 					toolChange, err := strconv.ParseBool(parts[2])
-					u.Assert(err == nil, "Invalid tool change format")
+					utils.Assert(err == nil, "Invalid tool change format")
 
 					err = piece.transform(line, machine, toolChange).Post(ctx)
 					if err != nil {
@@ -286,11 +286,11 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 				case line, open := <-handler.lineExitCh:
 					nextState = "lineEntry"
 
-					u.Assert(open, "[PieceHandler] lineExitCh closed")
+					utils.Assert(open, "[PieceHandler] lineExitCh closed")
 
-					wID := u.ID_W2
-					if line == u.ID_L0 {
-						wID = u.ID_W1
+					wID := utils.ID_W2
+					if line == utils.ID_L0 {
+						wID = utils.ID_W1
 					}
 
 					// Ack the warehouse entry
@@ -305,7 +305,7 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						plc.AckPiece(piece.ControlID)
 
 						_, err := factory.plcClient.Write(plc.AckOpcuaVars(), writeContext)
-						u.Assert(err == nil,
+						utils.Assert(err == nil,
 							"[PieceHandler] Error acknowledging warehouse entry")
 					}()
 
@@ -345,14 +345,14 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 				return
 
 			case _, open := <-wakeUpCh:
-				u.Assert(open, "[PieceHandler] wakeUpCh closed")
+				utils.Assert(open, "[PieceHandler] wakeUpCh closed")
 
 				if newPieces, err := GetPieces(ctx, 32); err != nil {
 					errCh <- err
 				} else {
 					// Should never happen as this function is only
 					// waken up when there are new pieces to handle
-					u.Assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
+					utils.Assert(len(newPieces) > 0, "[PieceHandler] No new pieces to handle")
 
 					func() {
 						piecePoolLock.Lock()
