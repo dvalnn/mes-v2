@@ -11,6 +11,7 @@ import (
 	"mes/internal/utils"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 type Delivery struct {
@@ -19,11 +20,6 @@ type Delivery struct {
 	Quantity int    `json:"quantity"`
 
 	nConfirmations int
-}
-
-type DeliveryAckMetadata struct {
-	txId int16
-	line int
 }
 
 func (d *Delivery) PostConfirmation(ctx context.Context) error {
@@ -53,6 +49,46 @@ func GetDeliveries(ctx context.Context) ([]Delivery, error) {
 			fmt.Errorf("[GetDeliveries] failed to unmarshal response: %w", err)
 	}
 	return deliveries, nil
+}
+
+type DeliveryStatistics struct {
+	Line              string `json:"line"`
+	Piece             string `json:"piece"`
+	AssociatedOrderID string `json:"associated_order_id"`
+	Quantity          int    `json:"quantity"`
+}
+
+func (ds *DeliveryStatistics) Post(ctx context.Context) error {
+	formData := url.Values{
+		"line":                {ds.Line},
+		"piece":               {ds.Piece},
+		"associated_order_id": {ds.AssociatedOrderID},
+		"quantity":            {strconv.Itoa(ds.Quantity)},
+	}
+
+	config := erp.ConfigDefaultWithEndpoint(erp.ENDPOINT_DELIVERY_STATS)
+	return erp.Post(ctx, config, formData)
+}
+
+type DeliveryAckMetadata struct {
+	txId     int16
+	line     int
+	quantity int
+}
+
+func lineIdxToString(idx int) string {
+	switch idx {
+	case 0:
+		return "DL1"
+	case 1:
+		return "DL2"
+	case 2:
+		return "DL3"
+	case 3:
+		return "DL4"
+	default:
+		return ""
+	}
 }
 
 type DeliveryHandler struct {
@@ -96,6 +132,18 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 
 				log.Printf("[DeliveryHandler] Delivery %v has %d confirmations out of %d\n",
 					delivery.ID, confirmationsMap[delivery.ID], delivery.nConfirmations)
+
+				stats := DeliveryStatistics{
+					Line:              lineIdxToString(metadata.line),
+					Piece:             delivery.Piece,
+					AssociatedOrderID: delivery.ID,
+					Quantity:          delivery.Quantity,
+				}
+				err := stats.Post(ctx)
+				if err != nil {
+					log.Printf("[DeliveryHandler] error: %v", err.Error())
+				}
+				// utils.Assert(err == nil, "[DeliveryHandler] Failed to post delivery stats to ERP")
 
 				if confirmationsMap[delivery.ID] == delivery.nConfirmations {
 					err := delivery.PostConfirmation(ctx)
@@ -166,8 +214,9 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 								utils.Assert(err == nil, "[DeliveryHandler] Error writing to delivery line")
 								freeLines[lIdx] = false
 								metadataMap[DeliveryAckMetadata{
-									txId: line.LastCommandTxId(),
-									line: lIdx,
+									txId:     line.LastCommandTxId(),
+									line:     lIdx,
+									quantity: quantity,
 								}] = delivery
 							}
 

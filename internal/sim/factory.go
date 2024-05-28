@@ -305,8 +305,9 @@ func runFactoryStateUpdateFunc(
 				deliveryLine.LastCommandTxId())
 
 			deliveryAckCh <- DeliveryAckMetadata{
-				txId: deliveryLine.LastCommandTxId(),
-				line: idx,
+				txId:     deliveryLine.LastCommandTxId(),
+				line:     idx,
+				quantity: int(deliveryLine.LastCommandQuantity()),
 			}
 		}
 	}

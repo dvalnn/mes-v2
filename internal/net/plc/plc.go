@@ -349,6 +349,10 @@ func (dl *DeliveryLine) LastCommandTxId() int16 {
 	return dl.command.TxId.Value
 }
 
+func (dl *DeliveryLine) LastCommandQuantity() int16 {
+	return dl.command.Np.Value
+}
+
 func (dl *DeliveryLine) PieceAcked() bool {
 	return dl.state.TxAckId.Value == dl.command.TxId.Value &&
 		dl.state.TxAckId.Value != dl.oldState.TxAckId.Value
