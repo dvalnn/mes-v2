@@ -281,7 +281,7 @@ func sendToProduction(
 func runFactoryStateUpdateFunc(
 	ctx context.Context,
 	shipAckCh chan<- int16,
-	deliveryAckCh chan<- int16,
+	deliveryAckCh chan<- DeliveryAckMetadata,
 ) {
 	factory, mutex := getFactoryInstance()
 	defer mutex.Unlock()
@@ -299,11 +299,15 @@ func runFactoryStateUpdateFunc(
 		}
 	}
 
-	for _, deliveryLine := range factory.deliveryLines {
+	for idx, deliveryLine := range factory.deliveryLines {
 		if deliveryLine.PieceAcked() {
 			log.Printf("[runFactoryStateUpdateFunc] Delivery %v Acked\n",
 				deliveryLine.LastCommandTxId())
-			deliveryAckCh <- deliveryLine.LastCommandTxId()
+
+			deliveryAckCh <- DeliveryAckMetadata{
+				txId: deliveryLine.LastCommandTxId(),
+				line: idx,
+			}
 		}
 	}
 }
@@ -311,7 +315,7 @@ func runFactoryStateUpdateFunc(
 func StartFactoryHandler(
 	ctx context.Context,
 	shipAckCh chan<- int16,
-	deliveryAckCh chan<- int16,
+	deliveryAckCh chan<- DeliveryAckMetadata,
 ) <-chan error {
 	errCh := make(chan error)
 
