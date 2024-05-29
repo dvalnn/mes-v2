@@ -43,7 +43,7 @@ func getFactoryInstance() (*factory, *sync.Mutex) {
 func factoryStateUpdate(ctx context.Context, f *factory) error {
 	for _, warehouse := range f.warehouses {
 		func() {
-			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			readCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			_, err := f.plcClient.Read(warehouse.OpcuaVars(), readCtx)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading warehouse")
@@ -52,7 +52,7 @@ func factoryStateUpdate(ctx context.Context, f *factory) error {
 
 	for _, supplyLine := range f.supplyLines {
 		func() {
-			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			readCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			readResponse, err := f.plcClient.Read(supplyLine.StateOpcuaVars(), readCtx)
 			supplyLine.UpdateState(readResponse)
@@ -62,7 +62,7 @@ func factoryStateUpdate(ctx context.Context, f *factory) error {
 
 	for _, deliveryLine := range f.deliveryLines {
 		func() {
-			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			readCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			readResponse, err := f.plcClient.Read(deliveryLine.StateOpcuaVars(), readCtx)
 			deliveryLine.UpdateState(readResponse)
@@ -78,7 +78,7 @@ func factoryStateUpdate(ctx context.Context, f *factory) error {
 		}
 
 		func() {
-			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			readCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			readResponse, err := f.plcClient.Read(line.plc.StateOpcuaVars(), readCtx)
 			utils.Assert(err == nil, "[factoryStateUpdate] Error reading line state")
@@ -325,7 +325,7 @@ func StartFactoryHandler(
 		factory, mutex := getFactoryInstance()
 		defer mutex.Unlock()
 
-		connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		connectCtx, cancel := context.WithTimeout(ctx, plc.DEFAULT_OPCUA_TIMEOUT)
 		defer cancel()
 
 		err := factory.plcClient.Connect(connectCtx)
@@ -346,7 +346,7 @@ func StartFactoryHandler(
 
 			default:
 				runFactoryStateUpdateFunc(ctx, shipAckCh, deliveryAckCh)
-				time.Sleep(3 * time.Second)
+				time.Sleep(1 * time.Second)
 			}
 		}
 	}()

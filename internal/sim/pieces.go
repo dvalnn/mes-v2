@@ -216,7 +216,7 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 
 			nextState := "lineEntry"
 			func() {
-				ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+				ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 				defer cancel()
 				handler = sendToProduction(ctx, &piece)
 			}()
