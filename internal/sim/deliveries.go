@@ -140,10 +140,7 @@ func StartDeliveryHandler(ctx context.Context) *DeliveryHandler {
 					Quantity:          delivery.Quantity,
 				}
 				err := stats.Post(ctx)
-				if err != nil {
-					log.Printf("[DeliveryHandler] error: %v", err.Error())
-				}
-				// utils.Assert(err == nil, "[DeliveryHandler] Failed to post delivery stats to ERP")
+				utils.Assert(err == nil, "[DeliveryHandler] Failed to post delivery stats to ERP")
 
 				if confirmationsMap[delivery.ID] == delivery.nConfirmations {
 					err := delivery.PostConfirmation(ctx)
