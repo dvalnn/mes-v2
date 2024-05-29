@@ -209,7 +209,7 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 			piece.Steps[len(piece.Steps)-1].ProductKind,
 		)
 
-		watchdogTimeout := 1 * time.Minute
+		watchdogTimeout := 10 * time.Minute
 
 	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
