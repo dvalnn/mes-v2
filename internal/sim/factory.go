@@ -206,7 +206,7 @@ func sendToLine(lineID string, piece *Piece) *itemHandler {
 	utils.Assert(controlForm != nil, "[sendToLine] controlForm is nil")
 
 	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolTop)
-	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M1_POS, controlForm.toolBot)
+	factory.processLines[lineID].setCurrentTool(LINE_DEFAULT_M2_POS, controlForm.toolBot)
 
 	log.Printf("[sendToLine] line: %s processForm: %v piece: %s\n",
 		lineID, controlForm, piece.ErpIdentifier)
