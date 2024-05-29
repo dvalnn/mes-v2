@@ -100,7 +100,24 @@ func StartShipmentHandler(
 				return
 
 			case shipments := <-shipCh:
+				totalArrived := 0
+				availableSpace := 0
+				func() {
+					factory, mutex := getFactoryInstance()
+					defer mutex.Unlock()
+
+					w1Total := int(factory.warehouses[0].Quantity.Value)
+					w2Total := int(factory.warehouses[1].Quantity.Value)
+					availableSpace = 2*WAREHOUSE_CAPACITY - w1Total - w2Total
+				}()
+
 				for _, shipment := range shipments {
+					// Ignore (delay) shipments that exceed the available space in the factory
+					if shipment.NPieces+totalArrived > availableSpace {
+						continue
+					}
+					totalArrived += shipment.NPieces
+
 					log.Printf(
 						"[ShipmentHandler] New shipment (id %d): %d pieces of type %v",
 						shipment.ID,

@@ -4,7 +4,7 @@ import "time"
 
 const (
 	OPCUA_ENDPOINT        = "opc.tcp://192.168.1.5:4840"
-	DEFAULT_OPCUA_TIMEOUT = 5 * time.Second
+	DEFAULT_OPCUA_TIMEOUT = 10 * time.Second
 
 	CODESYS_PATH = "ns=4;s=|var|CODESYS Control Win V3 x64.Application."
 	GVL_PATH     = CODESYS_PATH + "GVL."
