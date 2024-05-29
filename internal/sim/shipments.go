@@ -107,8 +107,7 @@ func StartShipmentHandler(
 					defer mutex.Unlock()
 
 					w1Total := int(factory.warehouses[0].Quantity.Value)
-					w2Total := int(factory.warehouses[1].Quantity.Value)
-					availableSpace = 2*WAREHOUSE_CAPACITY - w1Total - w2Total
+					availableSpace = WAREHOUSE_CAPACITY - w1Total
 				}()
 
 				for _, shipment := range shipments {

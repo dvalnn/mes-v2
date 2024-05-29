@@ -209,30 +209,17 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 			piece.Steps[len(piece.Steps)-1].ProductKind,
 		)
 
-		watchdogTimeout := 10 * time.Minute
-
 	StepLoop:
 		for piece.CurrentStep < len(piece.Steps) {
 
-			nextState := "lineEntry"
-			func() {
-				ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-				defer cancel()
-				handler = sendToProduction(ctx, &piece)
-			}()
+			handler = sendToProduction(ctx, &piece)
 			log.Printf("[PieceHandler] Piece %v sent to production at step (%d of %d)\n",
 				piece.ErpIdentifier,
 				piece.CurrentStep,
 				len(piece.Steps))
 
 			for {
-				watchdog := time.NewTimer(watchdogTimeout)
 				select {
-				case <-watchdog.C:
-					log.Printf(
-						"[PieceHandler - WARNING] Watchdog timeout. Piece %s waiting for state %s",
-						piece.ErpIdentifier, nextState)
-					continue StepLoop // restart the loop, register again
 
 				case err, open := <-handler.errCh:
 					utils.Assert(open, "[PieceHandler] error channel closed")
@@ -243,8 +230,6 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					return
 
 				case line, open := <-handler.lineEntryCh:
-					nextState = "transform"
-
 					utils.Assert(open, "[PieceHandler] lineEntryCh closed")
 
 					if err := piece.exitToProdLine(line).Post(ctx); err != nil {
@@ -261,8 +246,6 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 					)
 
 				case lineData, open := <-handler.transformCh:
-					nextState = "lineExitCh"
-
 					utils.Assert(open, "[PieceHandler] transformCh closed")
 
 					parts := strings.Split(lineData, ",")
@@ -284,8 +267,6 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						piece.ErpIdentifier, line, machine, piece.CurrentStep, len(piece.Steps))
 
 				case line, open := <-handler.lineExitCh:
-					nextState = "lineEntry"
-
 					utils.Assert(open, "[PieceHandler] lineExitCh closed")
 
 					wID := utils.ID_W2
@@ -322,10 +303,8 @@ func StartPieceHandler(ctx context.Context) *PieceHandler {
 						wID,
 					)
 
-					watchdog.Stop()
 					continue StepLoop
 				}
-				watchdog.Stop()
 			}
 		}
 
