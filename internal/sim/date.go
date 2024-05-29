@@ -53,12 +53,11 @@ func getDate(ctx context.Context) (DateForm, error) {
 func DateCounter(ctx context.Context, sleepPeriod time.Duration) <-chan DateForm {
 	dateCh := make(chan DateForm)
 
-	// initialDate, err := getDate(ctx)
-	// if err != nil {
-	// 	log.Printf("[DateCounter] failed to get initial date from the ERP: %v\n", err)
-	// 	initialDate = DateForm{Day: 1}
-	// }
-	initialDate := DateForm{Day: 3}
+	initialDate, err := getDate(ctx)
+	if err != nil {
+		log.Printf("[DateCounter] failed to get initial date from the ERP: %v\n", err)
+		initialDate = DateForm{Day: 1}
+	}
 
 	go func() {
 		defer close(dateCh)
