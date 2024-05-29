@@ -121,6 +121,7 @@ type processControlForm struct {
 	// Number of steps completed for this command (0-based) out of the total
 	// steps in the piece's recipe
 	stepsCompleted int
+	totalSteps     int
 	// Time needed to process this command to completion (in seconds)
 	// assuming no delays (e.g. waiting for a machine to be free)
 	intrinsicTime int
@@ -136,7 +137,7 @@ type processControlForm struct {
 func (pcf *processControlForm) metadataScore() int {
 	return pcf.intrinsicTime*TIME_WEIGHT +
 		pcf.queueSize*QUEUE_WEIGHT +
-		(3-pcf.stepsCompleted)*STEP_WEIGHT
+		(pcf.totalSteps-pcf.stepsCompleted)*STEP_WEIGHT
 }
 
 func ToolStrToInt(s string) int16 {
@@ -334,7 +335,17 @@ func (pl *ProcessingLine) createBestForm(piece *Piece) *processControlForm {
 		return pl.createBotOnlyForm(piece, currentStepIdx, currentStep)
 	}
 
-	return pl.createTopFormWithPossibleBot(piece, currentStepIdx, currentStep)
+	topFormCandidate := pl.createTopFormWithPossibleBot(piece, currentStepIdx, currentStep)
+	if !botCompatible {
+		return topFormCandidate
+	}
+
+	botFormCandidate := pl.createBotOnlyForm(piece, currentStepIdx, currentStep)
+
+	if topFormCandidate.metadataScore() < botFormCandidate.metadataScore() {
+		return topFormCandidate
+	}
+	return botFormCandidate
 }
 
 func (pl *ProcessingLine) createBotOnlyForm(
@@ -375,6 +386,7 @@ func (pl *ProcessingLine) createBotOnlyForm(
 		processBot: true,
 
 		stepsCompleted: stepsCompleted,
+		totalSteps:     len(piece.Steps),
 		intrinsicTime:  intrinsicTime,
 		queueSize:      pl.getNItemsInConveyor(),
 		changeM1:       false,
@@ -426,6 +438,7 @@ func (pl *ProcessingLine) createTopFormWithPossibleBot(
 		repeatBot:  repeatBot,
 
 		stepsCompleted: stepsCompleted,
+		totalSteps:     len(piece.Steps),
 		intrinsicTime:  intrinsicTime,
 		queueSize:      pl.getNItemsInConveyor(),
 		changeM1:       changeM1,
